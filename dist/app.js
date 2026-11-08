@@ -86,11 +86,19 @@ async function processReceipt(file) {
   toast(text ? 'Comprovativo lido. Revise os campos extraídos.' : 'Comprovativo carregado. Preencha os campos manualmente.');
 }
 async function extractText(file) {
-  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) { return ''; }
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) { return extractPdfText(file); }
   if (!window.Tesseract) { await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'); }
   if (!window.Tesseract) return '';
   const result = await window.Tesseract.recognize(file, 'por+eng', { logger: data => { if (data.status === 'recognizing text') byId('extractionState').querySelector('strong').textContent = `A ler comprovativo · ${Math.round(data.progress * 100)}%`; } });
   return result.data.text || '';
+}
+async function extractPdfText(file) {
+  if (!window.pdfjsLib) { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'); }
+  if (!window.pdfjsLib) return '';
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise; let extracted = '';
+  for (let pageNumber = 1; pageNumber <= Math.min(pdf.numPages, 3); pageNumber += 1) { const page = await pdf.getPage(pageNumber); const content = await page.getTextContent(); extracted += content.items.map(item => item.str || '').join(' ') + '\n'; }
+  return extracted.trim();
 }
 function loadScript(src) { return new Promise(resolve => { const script = document.createElement('script'); script.src = src; script.onload = resolve; script.onerror = resolve; document.head.appendChild(script); }); }
 function parseReceiptText(text, filename) {
