@@ -1,0 +1,13 @@
+{
+  "name": "flowroute-finance",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portal financeiro PEMx-RNA para viagens a serviço em Angola.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
