@@ -59,6 +59,8 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .row-actions { width:130px; }
 .mini-action { color:#3976c9; background:var(--blue-soft); border:0; border-radius:5px; padding:5px 8px; font-size:10px; font-weight:700; white-space:nowrap; }
 .mini-action:hover { background:#dbe9ff; }
+.danger-action { color:#b34b55; background:#fff0f1; }
+.danger-action:hover { background:#ffe1e4; }
 .row-action-stack { display:flex; flex-wrap:wrap; gap:5px; }
 .form-button-row { display:flex; gap:8px; flex-wrap:wrap; }
 .form-button-row .button { flex:1; }
