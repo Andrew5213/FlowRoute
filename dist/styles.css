@@ -108,6 +108,10 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .login-card h1 { font-family:'Space Grotesk'; font-size:28px; letter-spacing:-.04em; margin:9px 0 7px; }
 .login-card > p { color:var(--muted); font-size:12px; margin:0; }
 .login-form { display:grid; gap:14px; margin-top:20px; }
+.password-field { position:relative; display:flex; align-items:center; width:100%; }
+.password-field input { padding-right:68px !important; }
+.password-toggle { position:absolute; right:8px; border:0; border-radius:4px; background:transparent; color:#3c76d9; padding:5px 7px; font-size:10px; font-weight:700; }
+.password-toggle:hover { background:#e9f1ff; }
 .login-form label,.access-user-form label { display:flex; flex-direction:column; gap:6px; color:#68778b; font-size:10px; font-weight:600; }
 .login-form input,.access-user-form input,.access-user-form select { width:100%; border:1px solid #dfe6ee; border-radius:6px; background:#fff; color:#2d3e54; padding:10px; font-size:11px; outline:none; }
 .login-form input:focus,.access-user-form input:focus,.access-user-form select:focus { border-color:#82a9e3; box-shadow:0 0 0 3px rgba(60,118,217,.1); }
