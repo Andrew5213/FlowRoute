@@ -108,8 +108,6 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .login-form input,.access-user-form input,.access-user-form select { width:100%; border:1px solid #dfe6ee; border-radius:6px; background:#fff; color:#2d3e54; padding:10px; font-size:11px; outline:none; }
 .login-form input:focus,.access-user-form input:focus,.access-user-form select:focus { border-color:#82a9e3; box-shadow:0 0 0 3px rgba(60,118,217,.1); }
 .login-error { color:#b42318 !important; min-height:18px; margin:0 !important; }
-.login-demo { margin-top:20px; padding:12px; background:#f5f7fa; border-radius:10px; display:grid; gap:4px; color:#738197; font-size:10px; }
-.login-demo strong { color:#344257; font-size:10px; }
 .report-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:0 20px; }
 .access-layout { display:grid; gap:20px; }
 .access-matrix-scroll { overflow:auto; }
