@@ -92,6 +92,30 @@ async function calculateOpenStreetMapDistance(url, response) {
     const labels = [origin, ...stops, destination];
     const points = [];
     for (const label of labels) points.push(await geocodeLocation(label));
+    if (url.searchParams.get('mode') === 'air') {
+      const toRadians = value => Number(value) * Math.PI / 180;
+      const distanceKm = points.slice(1).reduce((total, point, index) => {
+        const previous = points[index];
+        const lat1 = toRadians(previous.lat);
+        const lat2 = toRadians(point.lat);
+        const latDelta = lat2 - lat1;
+        const lonDelta = toRadians(point.lon - previous.lon);
+        const arc = Math.sin(latDelta / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lonDelta / 2) ** 2;
+        return total + 6371 * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc));
+      }, 0);
+      sendJson(response, 200, {
+        origin,
+        destination,
+        stops,
+        distanceKm: Math.round(distanceKm * 100) / 100,
+        durationSeconds: 0,
+        durationText: '—',
+        provider: 'OpenStreetMap · trajeto aéreo aproximado',
+        points,
+        geometry: { type: 'LineString', coordinates: points.map(point => [point.lon, point.lat]) }
+      });
+      return true;
+    }
     const coordinatePath = points.map(point => `${point.lon},${point.lat}`).join(';');
     const osrmUrl = new URL(`${osrmRouteUrl}/${coordinatePath}`);
     osrmUrl.searchParams.set('overview', 'full');

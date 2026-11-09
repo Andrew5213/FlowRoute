@@ -57,6 +57,10 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .module-data-table { min-width:850px; }
 .module-data-table td,.module-data-table th { padding-left:16px; padding-right:16px; }
 .module-data-table td { max-width:240px; overflow:hidden; text-overflow:ellipsis; }
+.module-data-table tr.distance-select-row { cursor:pointer; }
+.module-data-table tr.distance-select-row:hover td { background:#f3f7fc; }
+.module-data-table tr.distance-select-row:focus-visible { outline:2px solid #82a9e3; outline-offset:-2px; }
+.module-data-table tr.selected-distance-row td { background:#e8f1ff; color:#254f83; }
 .row-actions { width:130px; }
 .mini-action { color:#3976c9; background:var(--blue-soft); border:0; border-radius:5px; padding:5px 8px; font-size:10px; font-weight:700; white-space:nowrap; }
 .mini-action:hover { background:#dbe9ff; }
