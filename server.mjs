@@ -116,6 +116,7 @@ async function geocodeLocation(label) {
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
   if (request.method === 'GET' && requestUrl.pathname === '/api/distance') {
+    if (request.headers.origin === 'https://flowroute-finance.andrew5213.chatgpt.site') response.setHeader('Access-Control-Allow-Origin', request.headers.origin);
     await calculateOpenStreetMapDistance(requestUrl, response);
     return;
   }
