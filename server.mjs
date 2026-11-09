@@ -16,8 +16,81 @@ const mime = {
   '.ico': 'image/x-icon'
 };
 
+const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+
+function sendJson(response, status, payload) {
+  response.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store'
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function formatDuration(seconds) {
+  const minutes = Math.max(1, Math.round(Number(seconds || 0) / 60));
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+  return hours ? `${hours} h ${remaining} min` : `${remaining} min`;
+}
+
+async function calculateGoogleDistance(url, response) {
+  const origin = url.searchParams.get('origin')?.trim();
+  const destination = url.searchParams.get('destination')?.trim();
+  const stops = url.searchParams.getAll('stop').map(value => value.trim()).filter(Boolean);
+  if (!origin || !destination) {
+    sendJson(response, 400, { error: 'Informe a origem e o destino.' });
+    return true;
+  }
+  if (!googleMapsApiKey) {
+    sendJson(response, 503, { error: 'A API Google ainda não foi configurada no Railway. Defina GOOGLE_MAPS_API_KEY.' });
+    return true;
+  }
+  try {
+    const googleResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': googleMapsApiKey,
+        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration'
+      },
+      body: JSON.stringify({
+        origin: { address: origin },
+        destination: { address: destination },
+        intermediates: stops.map(address => ({ address })),
+        travelMode: 'DRIVE',
+        units: 'METRIC'
+      })
+    });
+    const data = await googleResponse.json();
+    if (!googleResponse.ok || !data.routes?.[0]) {
+      sendJson(response, 502, { error: data.error?.message || 'Google Maps não encontrou uma rota para os locais informados.' });
+      return true;
+    }
+    const route = data.routes[0];
+    const meters = Number(route.distanceMeters || 0);
+    const seconds = Number.parseFloat(String(route.duration || '').replace(/s$/, '')) || 0;
+    sendJson(response, 200, {
+      origin,
+      destination,
+      stops,
+      distanceKm: Math.round((meters / 1000) * 100) / 100,
+      durationSeconds: seconds,
+      durationText: formatDuration(seconds),
+      provider: 'Google Maps Routes API'
+    });
+  } catch {
+    sendJson(response, 502, { error: 'Não foi possível consultar o Google Maps agora.' });
+  }
+  return true;
+}
+
 const server = createServer(async (request, response) => {
-  const requested = decodeURIComponent((request.url || '/').split('?')[0]);
+  const requestUrl = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+  if (request.method === 'GET' && requestUrl.pathname === '/api/distance') {
+    await calculateGoogleDistance(requestUrl, response);
+    return;
+  }
+  const requested = decodeURIComponent(requestUrl.pathname);
   const relative = requested === '/' ? 'index.html' : requested.replace(/^\/+/, '');
   const filePath = normalize(join(root, relative));
   if (!filePath.startsWith(root)) {
