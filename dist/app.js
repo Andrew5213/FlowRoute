@@ -100,6 +100,7 @@ const apiTokenKey = 'flowroute-finance-api-token-v1';
 let currentUser = null;
 let apiToken = localStorage.getItem(apiTokenKey) || '';
 let remoteMode = false;
+let syncQueue = Promise.resolve();
 const fmt = new Intl.NumberFormat('pt-AO', { maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('pt-AO', { day: '2-digit', month: 'short', year: 'numeric' });
 const money = value => `${fmt.format(Number(value || 0))} Kz`;
@@ -116,7 +117,7 @@ function profileFor(user = currentUser) { return state.profiles?.find(profile =>
 function canAccess(moduleId) { return moduleId === 'summary' || Boolean(profileFor()?.permissions?.includes(moduleId)); }
 function accessibleModules() { return moduleDefs.filter(item => canAccess(item.id)); }
 function updateCurrentUserUi() { const profile = profileFor(); const name = currentUser?.name || 'Visitante'; const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase(); if (byId('currentAccessBadge')) byId('currentAccessBadge').textContent = profile ? `Perfil · ${profile.name}` : 'Acesso'; if (byId('currentUserName')) byId('currentUserName').textContent = name; if (byId('currentUserRole')) byId('currentUserRole').textContent = profile?.name || 'Sem perfil'; if (byId('currentUserAvatar')) byId('currentUserAvatar').textContent = initials || 'AM'; }
-function persist() { localStorage.setItem(storageKey, JSON.stringify(state)); updateSync(); if (apiToken) syncServerState(); }
+function persist() { localStorage.setItem(storageKey, JSON.stringify(state)); updateSync(); if (apiToken) { syncQueue = syncQueue.then(() => syncServerState()).catch(() => {}); } }
 function updateSync() { const now = new Date(); const t = `Atualizado ${now.toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}`; if (byId('lastSync')) byId('lastSync').textContent = t; if (byId('footerSync')) byId('footerSync').textContent = `${now.toLocaleDateString('pt-AO', { day: '2-digit', month: 'short', year: 'numeric' })}, ${t.replace('Atualizado ', '')}`; }
 function toast(message) { const el = byId('toast'); el.textContent = message; el.classList.add('show'); window.clearTimeout(toast.timer); toast.timer = window.setTimeout(() => el.classList.remove('show'), 3600); }
 function showLogin(message = '') { currentUser = null; byId('appShell').hidden = true; byId('loginScreen').hidden = false; byId('loginError').textContent = message; window.setTimeout(() => byId('loginUsername')?.focus(), 0); }
