@@ -4,6 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0e1d32" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <title>FlowRoute Finance</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -37,7 +42,7 @@
       </aside>
 
       <main class="main-content">
-        <header class="topbar"><div class="breadcrumb"><span>PEMx-RNA</span><span class="slash">/</span><strong id="pageTitle">Resumo</strong></div><div class="topbar-actions"><span class="admin-badge" id="currentAccessBadge">Acesso</span><button class="period-chip" id="periodChip"><span class="calendar-icon">□</span> Novembro 2026 <span class="chevron">⌄</span></button><button class="notification-button" aria-label="Notificações"><span>♢</span><i></i></button></div></header>
+        <header class="topbar"><div class="breadcrumb"><span>PEMx-RNA</span><span class="slash">/</span><strong id="pageTitle">Resumo</strong></div><div class="topbar-actions"><span class="admin-badge" id="currentAccessBadge">Acesso</span><button class="button install-button" id="installButton" hidden>Instalar app</button><button class="period-chip" id="periodChip"><span class="calendar-icon">□</span> Novembro 2026 <span class="chevron">⌄</span></button><button class="notification-button" aria-label="Notificações"><span>♢</span><i></i></button></div></header>
         <section class="content-wrap">
           <section class="view active" id="view-dashboard">
             <div class="page-heading"><div><div class="kicker">PÁGINA INICIAL · ADMINISTRADOR</div><h1>Resumo</h1><p>Visão integrada das viagens, equipas, frota e pagamentos em AOA.</p></div><div class="heading-actions"><button class="button secondary" data-module-target="expenses"><span>＋</span> Lançar despesa</button><button class="button primary" id="quickReport"><span>↓</span> Relatórios PDF / Excel</button></div></div>

@@ -10,6 +10,7 @@ Portal privado para controlo financeiro de viagens a serviço em Angola, baseado
 - OCR assistido para preencher valor, fornecedor, data, fatura e descrição.
 - Revisão humana dos campos antes de gravar.
 - Relatório Excel completo com os demonstrativos financeiros e todos os módulos operacionais.
+- Web App instalável (PWA), com manifesto, ícone e cache offline básico para abrir o FlowRoute como aplicativo.
 
 ## Executar localmente
 
@@ -18,6 +19,10 @@ npm start
 ```
 
 O servidor usa `PORT` quando definido pelo ambiente e serve a pasta `dist/`.
+
+## Web App e persistência
+
+O endereço publicado no Railway já funciona como Web App responsivo. Em navegadores compatíveis, o botão “Instalar app” permite instalar o FlowRoute no computador ou celular; o Service Worker mantém o shell da aplicação disponível offline. Os dados desta versão continuam persistidos no navegador por usuário/dispositivo.
 
 ## Nota de avaliação
 
