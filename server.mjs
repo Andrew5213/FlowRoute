@@ -16,7 +16,19 @@ const mime = {
   '.ico': 'image/x-icon'
 };
 
-const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+const osrmRouteUrl = 'https://router.project-osrm.org/route/v1/driving';
+const nominatimSearchUrl = 'https://nominatim.openstreetmap.org/search';
+const geocodeCache = new Map();
+
+const knownLocations = [
+  ['Luanda', -8.8383, 13.2344], ['Benguela', -12.5763, 13.4055], ['Malanje', -9.5402, 16.3408],
+  ['Huambo', -12.7761, 15.7392], ['Lubango', -14.9172, 13.4925], ['Huíla — Lubango', -14.9172, 13.4925],
+  ['Saurimo', -9.6608, 20.3916], ['Lunda Sul — Saurimo', -9.6608, 20.3916], ['Cabinda', -5.55, 12.2],
+  ['Ondjiva', -17.0667, 15.7333], ['Moçâmedes', -15.1961, 12.1522], ['Namibe', -15.1961, 12.1522],
+  ['Dundo', -7.38, 20.83], ['Lunda Norte — Dundo', -7.38, 20.83], ['Uíge', -7.6087, 15.0613],
+  ['Sumbe', -11.2061, 13.8437], ['Mbanza Kongo', -6.267, 14.24], ['Luena', -11.783, 19.9167],
+  ['Kuito', -12.3833, 16.9333]
+].map(([name, lat, lon]) => ({ name, lat, lon }));
 
 function sendJson(response, status, payload) {
   response.writeHead(status, {
@@ -33,7 +45,7 @@ function formatDuration(seconds) {
   return hours ? `${hours} h ${remaining} min` : `${remaining} min`;
 }
 
-async function calculateGoogleDistance(url, response) {
+async function calculateOpenStreetMapDistance(url, response) {
   const origin = url.searchParams.get('origin')?.trim();
   const destination = url.searchParams.get('destination')?.trim();
   const stops = url.searchParams.getAll('stop').map(value => value.trim()).filter(Boolean);
@@ -41,34 +53,24 @@ async function calculateGoogleDistance(url, response) {
     sendJson(response, 400, { error: 'Informe a origem e o destino.' });
     return true;
   }
-  if (!googleMapsApiKey) {
-    sendJson(response, 503, { error: 'A API Google ainda não foi configurada no Railway. Defina GOOGLE_MAPS_API_KEY.' });
-    return true;
-  }
   try {
-    const googleResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': googleMapsApiKey,
-        'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration'
-      },
-      body: JSON.stringify({
-        origin: { address: origin },
-        destination: { address: destination },
-        intermediates: stops.map(address => ({ address })),
-        travelMode: 'DRIVE',
-        units: 'METRIC'
-      })
-    });
-    const data = await googleResponse.json();
-    if (!googleResponse.ok || !data.routes?.[0]) {
-      sendJson(response, 502, { error: data.error?.message || 'Google Maps não encontrou uma rota para os locais informados.' });
+    const labels = [origin, ...stops, destination];
+    const points = [];
+    for (const label of labels) points.push(await geocodeLocation(label));
+    const coordinatePath = points.map(point => `${point.lon},${point.lat}`).join(';');
+    const osrmUrl = new URL(`${osrmRouteUrl}/${coordinatePath}`);
+    osrmUrl.searchParams.set('overview', 'full');
+    osrmUrl.searchParams.set('geometries', 'geojson');
+    osrmUrl.searchParams.set('steps', 'false');
+    const routeResponse = await fetch(osrmUrl, { headers: { 'User-Agent': 'FlowRoute Finance route calculator' } });
+    const data = await routeResponse.json();
+    if (!routeResponse.ok || data.code !== 'Ok' || !data.routes?.[0]) {
+      sendJson(response, 502, { error: data.message || 'OpenStreetMap não encontrou uma rota para os locais informados.' });
       return true;
     }
     const route = data.routes[0];
-    const meters = Number(route.distanceMeters || 0);
-    const seconds = Number.parseFloat(String(route.duration || '').replace(/s$/, '')) || 0;
+    const meters = Number(route.distance || 0);
+    const seconds = Number(route.duration || 0);
     sendJson(response, 200, {
       origin,
       destination,
@@ -76,18 +78,45 @@ async function calculateGoogleDistance(url, response) {
       distanceKm: Math.round((meters / 1000) * 100) / 100,
       durationSeconds: seconds,
       durationText: formatDuration(seconds),
-      provider: 'Google Maps Routes API'
+      provider: 'OpenStreetMap + OSRM',
+      points,
+      geometry: route.geometry
     });
-  } catch {
-    sendJson(response, 502, { error: 'Não foi possível consultar o Google Maps agora.' });
+  } catch (error) {
+    sendJson(response, 502, { error: error.message || 'Não foi possível calcular a rota gratuita agora.' });
   }
   return true;
+}
+
+function normalizeLocation(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+async function geocodeLocation(label) {
+  const normalized = normalizeLocation(label);
+  const known = knownLocations.find(location => normalizeLocation(location.name) === normalized);
+  if (known) return { ...known, query: label };
+  if (geocodeCache.has(normalized)) return { ...geocodeCache.get(normalized), query: label };
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  const searchUrl = new URL(nominatimSearchUrl);
+  searchUrl.searchParams.set('q', `${label}, Angola`);
+  searchUrl.searchParams.set('format', 'jsonv2');
+  searchUrl.searchParams.set('limit', '1');
+  searchUrl.searchParams.set('countrycodes', 'ao');
+  searchUrl.searchParams.set('accept-language', 'pt');
+  const searchResponse = await fetch(searchUrl, { headers: { 'User-Agent': 'FlowRoute Finance route calculator' } });
+  const results = await searchResponse.json();
+  const match = results?.[0];
+  if (!searchResponse.ok || !match) throw new Error(`Não foi possível localizar “${label}” no mapa.`);
+  const location = { name: match.display_name?.split(',')[0] || label, lat: Number(match.lat), lon: Number(match.lon), query: label };
+  geocodeCache.set(normalized, location);
+  return location;
 }
 
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
   if (request.method === 'GET' && requestUrl.pathname === '/api/distance') {
-    await calculateGoogleDistance(requestUrl, response);
+    await calculateOpenStreetMapDistance(requestUrl, response);
     return;
   }
   const requested = decodeURIComponent(requestUrl.pathname);
