@@ -140,3 +140,19 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 @media (max-width:700px) { .dashboard-shell { gap:12px; }.dashboard-kpi-grid { gap:8px; }.dashboard-kpi { padding:13px 12px 12px; }.dashboard-kpi strong { font-size:17px; }.dashboard-kpi small { font-size:8px; }.dashboard-budget-row { grid-template-columns:minmax(82px,.9fr) minmax(65px,1.2fr) 35px; gap:7px; }.dashboard-budget-label span { font-size:8px; }.dashboard-month-foot { flex-direction:column; }.dashboard-panel-footer { padding-left:14px; padding-right:14px; }.dashboard-payment-summary { margin-left:14px; margin-right:14px; }.dashboard-activity-list,.dashboard-fleet-list { padding-left:14px; padding-right:14px; }.dashboard-modules-panel { padding-left:14px; padding-right:14px; } }
 
 .generic-form textarea,.generic-form select { width:100%; border:1px solid #dfe6ee; border-radius:6px; background:#fff; color:#2d3e54; padding:9px 10px; font:inherit; font-size:11px; outline:none; }.generic-form textarea { min-height:88px; resize:vertical; line-height:1.5; }.generic-form textarea:focus,.generic-form select:focus { border-color:#82a9e3; box-shadow:0 0 0 3px rgba(60,118,217,.1); }.generic-form .field-hint { color:#8d9aac; font-size:9px; font-weight:400; line-height:1.5; }
+.composition-people-picker { min-width:0; margin:0 0 14px; padding:12px; border:1px solid #dfe6ee; border-radius:8px; }
+.composition-people-picker legend { padding:0 5px; color:#68778b; font-size:10px; font-weight:700; }
+.generic-form .composition-people-search { display:flex; flex-direction:column; gap:6px; margin:0 0 9px; color:#718096; font-size:9px; }
+.composition-people-list { display:grid; max-height:245px; overflow-y:auto; border:1px solid #e8edf3; border-radius:7px; background:#fff; }
+.generic-form .composition-person-option { display:flex; flex-direction:row; align-items:center; gap:9px; margin:0; padding:8px 10px; border-bottom:1px solid #f0f2f5; cursor:pointer; }
+.composition-person-option:last-child { border-bottom:0; }
+.generic-form .composition-person-option:hover { background:#f7f9fc; }
+.generic-form .composition-person-option[hidden] { display:none; }
+.generic-form .composition-person-option input[type="checkbox"] { flex:0 0 16px; width:16px; height:16px; margin:0; padding:0; accent-color:var(--blue); }
+.composition-person-option span { display:flex; flex:1; flex-direction:column; gap:2px; min-width:0; }
+.composition-person-option strong { color:#405168; font-size:10px; }
+.composition-person-option small,.composition-list-hint { color:#8e9bab; font-size:9px; }
+.composition-list-hint { display:block; margin-top:8px; line-height:1.45; }
+.composition-selection-count { display:block; margin-top:6px; color:var(--blue); font-size:9px; }
+.composition-empty-list { padding:12px; border:1px dashed #cbd8e6; border-radius:8px; }
+.composition-empty-list p { margin:0 0 10px; color:#718096; font-size:10px; }.composition-add-person { margin-top:8px; align-self:flex-start; padding:0; font-size:9px; }
