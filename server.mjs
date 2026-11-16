@@ -71,6 +71,112 @@ async function saveState(incoming, actor) { const data = incoming && typeof inco
 function tokenFrom(request) { const value = request.headers.authorization || ''; return value.startsWith('Bearer ') ? value.slice(7) : ''; }
 async function authenticatedUser(request) { const token = tokenFrom(request); if (!pool || !token) return null; const memorySession = sessions.get(token); if (memorySession && memorySession.expiresAt > Date.now()) return memorySession.user; if (memorySession) sessions.delete(token); const result = await pool.query('SELECT u.id, u.name, u.username, u.email, u.profile_id, u.active, s.expires_at FROM app_sessions s JOIN app_users u ON u.id = s.user_id WHERE s.token = $1 AND s.expires_at > NOW()', [token]); if (!result.rows[0]) return null; const user = result.rows[0]; sessions.set(token, { user, expiresAt: new Date(user.expires_at).getTime() }); return user; }
 async function readRequestBody(request) { let body = ''; for await (const chunk of request) body += chunk; if (!body) return {}; try { return JSON.parse(body); } catch { return {}; } }
+let workExpenseDocumentsTablePromise = null;
+async function ensureWorkExpenseDocumentsTable() {
+  if (!pool) throw new Error('DATABASE_URL não configurada.');
+  if (!workExpenseDocumentsTablePromise) {
+    workExpenseDocumentsTablePromise = pool.query(`CREATE TABLE IF NOT EXISTS work_expense_documents (
+      expense_id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      data BYTEA NOT NULL,
+      uploaded_by TEXT NOT NULL REFERENCES app_users(id),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`).catch(error => { workExpenseDocumentsTablePromise = null; throw error; });
+  }
+  await workExpenseDocumentsTablePromise;
+}
+async function canManageWorkExpenses(user) {
+  if (!user) return false;
+  if (user.profile_id === 'administrador') return true;
+  const state = await getState();
+  return Boolean(state.profiles?.find(profile => profile.id === user.profile_id)?.permissions?.includes('purchases'));
+}
+async function readLimitedJson(request, limitBytes = 21 * 1024 * 1024) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of request) {
+    total += chunk.length;
+    if (total > limitBytes) { const error = new Error('O PDF ultrapassa o limite de 15 MB.'); error.statusCode = 413; throw error; }
+    chunks.push(chunk);
+  }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { const error = new Error('Dados da cotação inválidos.'); error.statusCode = 400; throw error; }
+}
+async function handleWorkExpenseApi(request, response, requestUrl) {
+  const path = requestUrl.pathname;
+  const documentMatch = path.match(/^\/api\/work-expenses\/([^/]+)\/document$/);
+  if (path !== '/api/work-expenses' && !documentMatch) return false;
+  setCors(request, response);
+  if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return true; }
+  if ((path === '/api/work-expenses' && request.method !== 'POST') || (documentMatch && request.method !== 'GET')) { sendJson(response, 405, { error: 'Método não permitido.' }); return true; }
+  if (!pool) { sendJson(response, 503, { error: 'Banco de dados não configurado neste ambiente.' }); return true; }
+  try {
+    await ensureDatabase();
+    const user = await authenticatedUser(request);
+    if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; }
+    if (!await canManageWorkExpenses(user)) { sendJson(response, 403, { error: 'Seu perfil não pode acessar gastos com obra.' }); return true; }
+    await ensureWorkExpenseDocumentsTable();
+    if (request.method === 'POST') {
+      const body = await readLimitedJson(request);
+      const input = body.expense || {};
+      const expenseId = String(input.id || '').trim();
+      const reference = String(input.reference || '').trim();
+      const supplier = String(input.supplier || '').trim();
+      const project = String(input.project || '').trim();
+      const scope = String(input.scope || '').trim();
+      const currency = String(input.currency || '').trim().toUpperCase();
+      const documentType = String(input.documentType || '').trim();
+      const issuedAt = String(input.date || '').trim();
+      const validityDays = Number(input.validityDays ?? 0);
+      const subtotal = Number(input.subtotal);
+      const vat = Number(input.vat);
+      const total = Number(input.total);
+      const paymentTerms = String(input.paymentTerms || '').trim();
+      const fileName = String(body.fileName || '').split(/[\\/]/).pop().replace(/[\r\n\0]/g, '').slice(0, 180) || 'cotacao.pdf';
+      const pdf = Buffer.from(String(body.fileBase64 || ''), 'base64');
+      const requestedStatus = String(input.status || 'Em análise').trim();
+      const allowedStatuses = ['Cotação', 'Contrato'].includes(documentType) ? ['Em análise', 'Adjudicada', 'Cancelada'] : ['Em análise', 'Faturada', 'Paga', 'Cancelada'];
+      const status = allowedStatuses.includes(requestedStatus) ? requestedStatus : 'Em análise';
+      if (!expenseId || !reference || !supplier || !project || !scope || !/^\d{4}-\d{2}-\d{2}$/.test(issuedAt) || !['Cotação', 'Fatura', 'Recibo / comprovativo', 'Contrato'].includes(documentType) || !['AOA', 'USD', 'EUR', 'BRL'].includes(currency) || !Number.isFinite(validityDays) || validityDays < 0 || (documentType === 'Cotação' && validityDays < 1) || !['Em análise', 'Adjudicada', 'Faturada', 'Paga', 'Cancelada'].includes(status) || !Number.isFinite(subtotal) || subtotal <= 0 || !Number.isFinite(vat) || vat < 0 || !Number.isFinite(total) || total <= 0 || Math.abs(subtotal + vat - total) > 0.02) { sendJson(response, 400, { error: 'Revise os campos e confirme subtotal + IVA = total.' }); return true; }
+      if (!fileName.toLowerCase().endsWith('.pdf') || pdf.length < 8 || pdf.length > 15 * 1024 * 1024 || pdf.subarray(0, 5).toString('ascii') !== '%PDF-') { sendJson(response, 400, { error: 'Anexe um PDF válido de até 15 MB.' }); return true; }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const saved = await client.query('SELECT data FROM app_state WHERE id = 1 FOR UPDATE');
+        const state = saved.rows[0]?.data || {};
+        const expenses = Array.isArray(state.workExpenses) ? state.workExpenses : [];
+        if (expenses.some(item => item.id === expenseId || item.reference?.toLowerCase() === reference.toLowerCase())) {
+          await client.query('ROLLBACK');
+          sendJson(response, 409, { error: 'Esta referência de documento já está cadastrada em Gastos com Obra.' });
+          return true;
+        }
+        const expense = { id: expenseId, category: 'Gastos com Obra', reference, supplier, project, scope, documentType, date: issuedAt, validityDays, currency, subtotal, vat, total, paymentTerms, status, documentName: fileName, documentSize: pdf.length, createdAt: new Date().toISOString(), createdBy: user.id };
+        state.workExpenses = [...expenses, expense];
+        await client.query('UPDATE app_state SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(state)]);
+        await client.query('INSERT INTO work_expense_documents (expense_id, file_name, content_type, data, uploaded_by) VALUES ($1, $2, $3, $4, $5)', [expenseId, fileName, 'application/pdf', pdf, user.id]);
+        await client.query('COMMIT');
+        sendJson(response, 201, { expense });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally { client.release(); }
+      return true;
+    }
+    const expenseId = decodeURIComponent(documentMatch[1]);
+    const state = await getState();
+    if (!state.workExpenses?.some(item => item.id === expenseId)) { sendJson(response, 404, { error: 'Registo de obra não encontrado.' }); return true; }
+    const result = await pool.query('SELECT file_name, content_type, data FROM work_expense_documents WHERE expense_id = $1', [expenseId]);
+    if (!result.rowCount) { sendJson(response, 404, { error: 'PDF não encontrado.' }); return true; }
+    const document = result.rows[0];
+    const safeName = document.file_name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 150) || 'cotacao.pdf';
+    response.writeHead(200, { 'Content-Type': document.content_type, 'Content-Length': document.data.length, 'Content-Disposition': `inline; filename="${safeName}"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    response.end(document.data);
+    return true;
+  } catch (error) {
+    sendJson(response, error.statusCode || 500, { error: error.message || 'Erro ao processar o gasto da obra.' });
+    return true;
+  }
+}
 async function handleApi(request, response, requestUrl) { setCors(request, response); if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return true; } if (!requestUrl.pathname.startsWith('/api/')) return false; if (request.method === 'GET' && requestUrl.pathname === '/api/health') { sendJson(response, 200, { ok: true, database: Boolean(pool), service: 'flowroute-finance' }); return true; } if (!pool) { sendJson(response, 503, { error: 'Banco de dados não configurado neste ambiente.' }); return true; } try { if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') { const body = await readRequestBody(request); await ensureDatabase(body.bootstrapState); const login = String(body.username || '').trim(); if (!login) { sendJson(response, 401, { error: 'Informe seu usuário ou e-mail.' }); return true; } const result = await pool.query('SELECT id, name, username, email, password_hash, profile_id, active FROM app_users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) ORDER BY (LOWER(username) = LOWER($1)) DESC, created_at ASC LIMIT 1', [login]); const user = result.rows[0]; if (!user || !user.active || !verifyPassword(body.password || '', user.password_hash)) { sendJson(response, 401, { error: 'Usuário ou senha inválidos.' }); return true; } const token = randomBytes(32).toString('hex'); const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7; await pool.query('INSERT INTO app_sessions (token, user_id, expires_at) VALUES ($1, $2, TO_TIMESTAMP($3 / 1000.0))', [token, user.id, expiresAt]); sessions.set(token, { user, expiresAt }); const data = await withCurrentUsers(await getState()); sendJson(response, 200, { token, user: publicUser(user), state: data }); return true; } if (request.method === 'GET' && requestUrl.pathname === '/api/auth/me') { const user = await authenticatedUser(request); if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; } sendJson(response, 200, { user: publicUser(user), state: await withCurrentUsers(await getState()) }); return true; } if (request.method === 'GET' && requestUrl.pathname === '/api/state') { const user = await authenticatedUser(request); if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; } sendJson(response, 200, { state: await withCurrentUsers(await getState()), user: publicUser(user) }); return true; } if (request.method === 'PUT' && requestUrl.pathname === '/api/state') { const user = await authenticatedUser(request); if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; } const body = await readRequestBody(request); const state = await saveState(body.state, user); sendJson(response, 200, { state: await withCurrentUsers(state), user: publicUser(user) }); return true; } sendJson(response, 404, { error: 'Endpoint não encontrado.' }); return true; } catch (error) { console.error('API error:', error); sendJson(response, 500, { error: error.message || 'Erro interno do servidor.' }); return true; } }
 
 function formatDuration(seconds) {
@@ -174,6 +280,7 @@ async function geocodeLocation(label) {
 
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+  if (await handleWorkExpenseApi(request, response, requestUrl)) return;
   if (requestUrl.pathname !== '/api/distance' && await handleApi(request, response, requestUrl)) return;
   if (request.method === 'GET' && requestUrl.pathname === '/api/distance') {
     setCors(request, response);

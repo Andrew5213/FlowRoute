@@ -1,4 +1,4 @@
-const CACHE_NAME = 'flowroute-finance-v10';
+const CACHE_NAME = 'flowroute-finance-v11';
 const APP_SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/cashflow.js', '/dashboard.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', event => {
