@@ -97,6 +97,36 @@ function dashboardExpenseRows() {
   return rows.slice(0, 7).map(row => `<tr><td><strong>${esc(row.team || '—')}</strong></td><td>${shortDate(row.date)}</td><td>${esc(row.type || '—')}</td><td>${esc(row.supplier || '—')}</td><td class="align-right"><strong>${money(row.amount || 0)}</strong></td></tr>`).join('');
 }
 
+function dashboardWorkExpenseCurrency(value, currency) {
+  const amount = new Intl.NumberFormat('pt-AO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value || 0));
+  return `${amount} ${currency === 'AOA' ? 'Kz' : currency}`;
+}
+
+function dashboardWorkExpensesPanel() {
+  if (!canAccess('workExpenses')) return '';
+  const records = Array.isArray(state.workExpenses) ? state.workExpenses : [];
+  const active = records.filter(row => dashboardNormalize(row.status) !== 'cancelada');
+  const totalsByCurrency = new Map();
+  active.forEach(row => {
+    const currency = String(row.currency || 'AOA').toUpperCase();
+    totalsByCurrency.set(currency, (totalsByCurrency.get(currency) || 0) + Number(row.total || 0));
+  });
+  const currencyOrder = ['AOA', 'USD', 'EUR', 'BRL'];
+  const currencyRows = [...totalsByCurrency.entries()]
+    .sort(([a], [b]) => (currencyOrder.indexOf(a) < 0 ? 99 : currencyOrder.indexOf(a)) - (currencyOrder.indexOf(b) < 0 ? 99 : currencyOrder.indexOf(b)) || a.localeCompare(b));
+  const statusCount = status => records.filter(row => dashboardNormalize(row.status) === dashboardNormalize(status)).length;
+  const completedCount = ['adjudicada', 'faturada', 'paga'].reduce((sum, status) => sum + statusCount(status), 0);
+  const latest = [...records].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 6);
+  const latestRows = latest.length ? latest.map(row => {
+    const status = dashboardNormalize(row.status);
+    const tone = ['adjudicada', 'faturada', 'paga'].includes(status) ? 'good-status' : status === 'cancelada' ? 'warning-status' : 'neutral-status';
+    return `<button class="dashboard-work-expense-row" data-module-target="workExpenses"><span class="dashboard-activity-icon">🏗</span><span class="dashboard-work-expense-copy"><strong>${esc(row.reference || row.supplier || 'Gasto de obra')}</strong><small>${shortDate(row.date)} · ${esc(row.project || row.supplier || 'Sem projeto')} · ${esc(row.documentType || 'Documento')}</small></span><span class="dashboard-work-expense-value"><strong>${dashboardWorkExpenseCurrency(row.total, String(row.currency || 'AOA').toUpperCase())}</strong><small class="dashboard-status ${tone}">${esc(row.status || 'Em análise')}</small></span></button>`;
+  }).join('') : '<div class="dashboard-empty">Nenhum documento de obra cadastrado.</div>';
+  const currencyMarkup = currencyRows.length ? currencyRows.map(([currency, total]) => `<div class="dashboard-work-expense-currency"><span>Total registado · ${esc(currency)}</span><strong>${dashboardWorkExpenseCurrency(total, currency)}</strong></div>`).join('') : '<div class="dashboard-work-expense-currency"><span>Total registado</span><strong>—</strong></div>';
+
+  return `<article class="panel dashboard-panel dashboard-work-expenses-panel"><div class="panel-heading"><div><h2>Gastos de Obra</h2><p>Cotações, faturas e comprovativos, apresentados por moeda e estado.</p></div><button class="text-button" data-module-target="workExpenses">Ver módulo <span>→</span></button></div><div class="dashboard-work-expense-summary"><div class="dashboard-work-expense-count"><span>Documentos ativos</span><strong>${active.length}</strong><small>${records.length} no total · ${statusCount('cancelada')} cancelados</small></div><div class="dashboard-work-expense-count"><span>Em análise</span><strong>${statusCount('Em análise')}</strong><small>Aguardam decisão financeira</small></div><div class="dashboard-work-expense-count"><span>Adjudicados, faturados ou pagos</span><strong>${completedCount}</strong><small>Estado confirmado no módulo</small></div><div class="dashboard-work-expense-currencies">${currencyMarkup}</div></div><div class="dashboard-panel-footer"><span>Totais excluem documentos cancelados.</span><span>Valores por moeda não são convertidos nem somados ao orçamento principal.</span></div><div class="dashboard-work-expense-list">${latestRows}</div></article>`;
+}
+
 function dashboardFleetRows() {
   const fleet = state.fleet || [];
   if (!fleet.length) return '<div class="dashboard-empty">Nenhuma viatura cadastrada.</div>';
@@ -173,6 +203,7 @@ function renderEnhancedSummary() {
   const expenseRows = dashboardExpenseRows();
   const fleetRows = dashboardFleetRows();
   const activityRows = dashboardActivityRows();
+  const workExpensesPanel = dashboardWorkExpensesPanel();
   const attentionRows = pendingItems.length
     ? pendingItems.slice(0, 8).map(item => `<button class="dashboard-attention-item" data-module-target="${esc(item.module)}"><span class="dashboard-attention-icon ${item.tone}">${item.icon}</span><span class="dashboard-attention-copy"><strong>${esc(item.title)}</strong><small>${esc(item.detail)}</small></span><span class="arrow">→</span></button>`).join('')
     : '<div class="dashboard-empty">Nenhuma pendência financeira ou operacional identificada.</div>';
@@ -183,6 +214,7 @@ function renderEnhancedSummary() {
   host.innerHTML = `<div class="dashboard-shell">
     <div class="page-heading dashboard-heading"><div><div class="kicker">PAINEL EXECUTIVO · FINANÇAS E OPERAÇÃO</div><h1>Dashboard</h1><p>Visão integrada do orçamento, missões, pagamentos, despesas e frota · ${esc(campaignRange)}</p></div><div class="heading-actions"><button class="button secondary" data-module-target="accounting"><span>＋</span> Lançar despesa</button><button class="button secondary" data-module-target="cashflow"><span>↘</span> Fluxo de caixa</button><button class="button primary" id="quickReport" data-module-target="reports"><span>↓</span> Relatórios</button></div></div>
     <div class="dashboard-kpi-grid">${kpis.map(([label, value, detail, icon, accent]) => `<article class="dashboard-kpi accent-${accent}"><div class="dashboard-kpi-head"><span>${esc(label)}</span><i>${icon}</i></div><strong>${esc(value)}</strong><small>${esc(detail)}</small></article>`).join('')}</div>
+    ${workExpensesPanel}
     <div class="dashboard-grid dashboard-grid-finance"><article class="panel dashboard-panel"><div class="panel-heading"><div><h2>Orçamento por natureza</h2><p>Realizado em relação ao previsto · valores em AOA</p></div><span class="panel-tag">${money(t.realized + t.paid)} contabilizados</span></div><div class="dashboard-budget-list">${budgetRows || '<div class="dashboard-empty">Sem categorias de orçamento.</div>'}</div><div class="dashboard-panel-footer"><span><i class="dashboard-legend-expected"></i> Previsto</span><span><i class="dashboard-legend-realized"></i> Realizado / pago por natureza</span><span>Contingência ${money(state.budget.contingency)}</span></div></article><article class="panel dashboard-panel"><div class="panel-heading"><div><h2>Previsão de caixa por mês</h2><p>Organizada pela data de início de cada etapa</p></div><button class="text-button" data-module-target="cashflow">Abrir fluxo <span>→</span></button></div><div class="dashboard-month-list">${flowRows}</div><div class="dashboard-panel-footer"><span>Previsto ${money(cash.metrics.forecast)}</span><span>Pago ${money(cash.metrics.paid)}</span><span>Despesas ${money(cash.metrics.expenses)}</span></div></article></div>
     <div class="dashboard-grid dashboard-grid-operations"><article class="panel dashboard-panel"><div class="panel-heading"><div><h2>Equipes e orçamento</h2><p>${teams.length} equipes · titulares, etapas, valores e quilometragem</p></div><button class="text-button" data-module-target="teams">Gerir equipes <span>→</span></button></div><div class="table-scroll"><table class="data-table dashboard-table dashboard-teams-table"><thead><tr><th>Equipe / missão</th><th>Líder</th><th>Pessoas</th><th>Etapas</th><th class="align-right">Orçamento</th><th class="align-right">Km previstos / registados</th><th>Estado</th></tr></thead><tbody>${teamRows}</tbody></table></div><div class="dashboard-panel-footer"><span>Orçamento das equipes ${money(teamBudget)}</span><span>Distância planeada ${teamKm.toLocaleString('pt-AO')} km</span><span>Registada ${recordedKm.toLocaleString('pt-AO')} km</span></div></article><article class="panel dashboard-panel"><div class="panel-heading"><div><h2>Pagamentos por beneficiário</h2><p>Conciliação de valores devidos, pagos e em aberto</p></div><button class="text-button" data-module-target="payments">Ver pagamentos <span>→</span></button></div><div class="dashboard-payment-summary"><div><span>Total devido</span><strong>${money(dueTotal)}</strong></div><div><span>Já pago</span><strong>${money(paidByBeneficiary)}</strong></div><div><span>Em aberto</span><strong>${money(dueBalance)}</strong></div></div><div class="table-scroll"><table class="data-table dashboard-table"><thead><tr><th>Beneficiário</th><th class="align-right">Devido</th><th class="align-right">Pago</th><th class="align-right">Saldo</th></tr></thead><tbody>${paymentRows}</tbody></table></div></article></div>
     <div class="dashboard-grid dashboard-grid-operations"><article class="panel dashboard-panel"><div class="panel-heading"><div><h2>Calendário das etapas</h2><p>${routes.length} etapas · ${activeRoutes} em vigor · previsão financeira estimada</p></div><button class="text-button" data-module-target="routes">Abrir rotas <span>→</span></button></div><div class="table-scroll"><table class="data-table dashboard-table dashboard-route-table"><thead><tr><th>Equipe</th><th>Etapa</th><th>Percurso</th><th>Início</th><th>Duração</th><th>Estado</th><th class="align-right">Previsão</th></tr></thead><tbody>${routeRows}</tbody></table></div>${routes.length > 10 ? `<div class="dashboard-panel-footer"><span>A mostrar 10 de ${routes.length} etapas.</span></div>` : ''}</article><article class="panel dashboard-panel"><div class="panel-heading"><div><h2>Pendências que exigem atenção</h2><p>${pendingItems.length} alertas financeiros e operacionais</p></div><span class="alert-count">${pendingItems.length}</span></div><div class="dashboard-attention-list">${attentionRows}</div></article></div>

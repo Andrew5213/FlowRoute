@@ -174,3 +174,22 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .composition-empty-list p { margin:0 0 10px; color:#718096; font-size:10px; }.composition-add-person { margin-top:8px; align-self:flex-start; padding:0; font-size:9px; }
 @media (max-width:700px) { .form-row.three { grid-template-columns:1fr; }.work-expenses-table { min-width:980px; } }
 @media (max-width:1100px) { .work-expenses-section { grid-template-columns:1fr; } }
+.dashboard-work-expenses-panel { width:100%; }
+.dashboard-work-expense-summary { display:grid; grid-template-columns:repeat(3,minmax(125px,.75fr)) minmax(240px,1.6fr); gap:10px; padding:0 20px 14px; }
+.dashboard-work-expense-count,.dashboard-work-expense-currency { display:flex; flex-direction:column; justify-content:center; gap:4px; min-width:0; padding:11px 12px; border:1px solid #edf0f3; border-radius:7px; background:#fbfcfd; }
+.dashboard-work-expense-count span,.dashboard-work-expense-currency span { color:#8997a8; font-size:9px; }
+.dashboard-work-expense-count strong,.dashboard-work-expense-currency strong { color:#2e3e53; font-family:'Space Grotesk'; font-size:16px; font-weight:600; }
+.dashboard-work-expense-count small { color:#98a4b1; font-size:8px; }
+.dashboard-work-expense-currencies { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:8px; }
+.dashboard-work-expense-currency strong { font-size:13px; }
+.dashboard-work-expense-list { display:grid; padding:0 20px 12px; }
+.dashboard-work-expense-row { display:flex; align-items:center; gap:10px; width:100%; padding:10px 0; border:0; border-top:1px solid #f0f2f5; background:transparent; text-align:left; cursor:pointer; }
+.dashboard-work-expense-row:first-child { border-top:0; }
+.dashboard-work-expense-copy { display:flex; flex:1; flex-direction:column; gap:3px; min-width:0; }
+.dashboard-work-expense-copy strong { overflow:hidden; color:#405168; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.dashboard-work-expense-copy small { overflow:hidden; color:#93a0af; font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.dashboard-work-expense-value { display:flex; flex-direction:column; align-items:flex-end; gap:4px; white-space:nowrap; }
+.dashboard-work-expense-value > strong { color:#405168; font-size:10px; }
+.dashboard-work-expense-value .dashboard-status { font-size:8px; }
+@media (max-width:900px) { .dashboard-work-expense-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }.dashboard-work-expense-currencies { grid-column:1/-1; } }
+@media (max-width:700px) { .dashboard-work-expense-summary { grid-template-columns:1fr 1fr; padding-left:14px; padding-right:14px; }.dashboard-work-expense-count { padding:9px; }.dashboard-work-expense-count strong { font-size:14px; }.dashboard-work-expense-list { padding-left:14px; padding-right:14px; }.dashboard-work-expense-row { gap:7px; }.dashboard-work-expense-copy small { max-width:42vw; }.dashboard-work-expense-value > strong { font-size:9px; } }
