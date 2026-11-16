@@ -8,6 +8,7 @@ Portal privado para controlo financeiro de viagens a serviço em Angola, baseado
 - Formulários locais para adicionar registos, aprovar alterações e compras e atualizar o controle de frota.
 - Prestação de contas com importação de comprovativos por imagem ou PDF.
 - OCR assistido para preencher valor, fornecedor, data, fatura e descrição.
+- Leitura por IA de orçamentos em PDF, imagem e planilha nas áreas Compras Extras e Gastos de Obra; os dados são sugeridos para revisão e o documento original fica anexado ao registo.
 - Revisão humana dos campos antes de gravar.
 - Relatório Excel completo com os demonstrativos financeiros e todos os módulos operacionais.
 - Web App instalável (PWA), com manifesto, ícone e cache offline básico para abrir o FlowRoute como aplicativo.
@@ -22,8 +23,12 @@ O servidor usa `PORT` quando definido pelo ambiente e serve a pasta `dist/`.
 
 ## Web App e persistência
 
-O endereço publicado no Railway já funciona como Web App responsivo. Em navegadores compatíveis, o botão “Instalar app” permite instalar o FlowRoute no computador ou celular; o Service Worker mantém o shell da aplicação disponível offline. Os dados desta versão continuam persistidos no navegador por usuário/dispositivo.
+O endereço publicado no Railway já funciona como Web App responsivo. Em navegadores compatíveis, o botão “Instalar app” permite instalar o FlowRoute no computador ou celular; o Service Worker mantém o shell da aplicação disponível offline. O app usa PostgreSQL para contas, dados e documentos anexados.
+
+## Configurar leitura por IA
+
+Defina `OPENAI_API_KEY` como variável secreta no serviço do Railway ou no arquivo `.env` do Compose da VPS. Opcionalmente, use `OPENAI_MODEL` para escolher o modelo; o padrão é `gpt-4o-mini`. A chave fica somente no servidor. A leitura envia o documento selecionado à API da OpenAI e a pessoa deve conferir todos os campos antes de gravar. O uso da API pode gerar custos conforme a conta e o volume de documentos.
 
 ## Nota de avaliação
 
-Esta é uma primeira versão funcional com dados de demonstração persistidos no navegador. A planilha continua sendo a referência de regras e campos; o conteúdo da aba “Instruções” foi tratado como documentação do processo, não como instrução automática para o agente. Para produção, ligar uma base de dados, autenticação por perfil e um serviço de OCR server-side.
+O conteúdo dos documentos carregados é tratado como dado a extrair; instruções impressas dentro deles não são executadas pelo sistema.

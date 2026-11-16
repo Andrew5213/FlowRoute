@@ -1,3 +1,5 @@
 outputs/
 _audio_tools/
 node_modules/
+deploy/vps/.env
+deploy/vps/migrate/*.snapshot.json

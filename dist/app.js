@@ -84,7 +84,7 @@ const specs = {
   maintenance: { title: 'Manutenção da frota', description: 'Ordens de serviço, revisões, pneus e reparos por viatura.', columns: [['id', 'OS'], ['date', 'Data'], ['vehicle', 'Viatura'], ['team', 'Equipe'], ['type', 'Tipo'], ['description', 'Descrição'], ['odometer', 'Km'], ['provider', 'Oficina'], ['planned', 'Valor previsto'], ['status', 'Status']], fields: [['id', 'Nº OS', 'text'], ['date', 'Data', 'date'], ['vehicle', 'Viatura', 'text'], ['team', 'Equipe', 'text'], ['type', 'Tipo', 'text'], ['description', 'Descrição', 'text'], ['odometer', 'Km hodômetro', 'number'], ['provider', 'Local / oficina', 'text'], ['planned', 'Valor previsto', 'number']] },
   mileage: { title: 'Quilometragem', description: 'Uma leitura semanal por viatura alimenta o ciclo de manutenção.', columns: [['date', 'Data'], ['vehicle', 'Viatura'], ['odometer', 'Hodômetro'], ['responsible', 'Responsável'], ['team', 'Equipe'], ['distance', 'Km rodados']], fields: [['date', 'Data da leitura', 'date'], ['vehicle', 'Viatura', 'text'], ['odometer', 'Hodômetro (km)', 'number'], ['responsible', 'Responsável', 'text'], ['team', 'Equipe', 'text']] },
   fleet: { title: 'Controle da frota', description: 'Situação da leitura, hodômetro atual e próxima revisão.', columns: [['vehicle', 'Viatura'], ['fuel', 'Combustível'], ['plate', 'Matrícula'], ['lastReading', 'Última leitura'], ['odometer', 'Hodômetro'], ['status', 'Situação'], ['nextService', 'Próxima revisão']], fields: [['vehicle', 'Viatura', 'text'], ['fuel', 'Combustível', 'text'], ['plate', 'Matrícula', 'text'], ['lastReading', 'Última leitura', 'date'], ['odometer', 'Hodômetro atual', 'number'], ['nextService', 'Próxima revisão', 'date']] },
-  purchases: { title: 'Compras extras', description: 'Solicite, aprove, anexe comprovativo e programe o reembolso.', columns: [['id', 'Nº'], ['date', 'Data'], ['requester', 'Solicitante'], ['team', 'Equipe'], ['item', 'Material / item'], ['justification', 'Justificativa'], ['estimated', 'Estimado'], ['status', 'Status']], fields: [['id', 'Nº solicitação', 'text'], ['date', 'Data solicitação', 'date'], ['requester', 'Solicitante', 'text'], ['team', 'Equipe', 'text'], ['item', 'Material / item', 'text'], ['justification', 'Justificativa', 'text'], ['estimated', 'Valor estimado', 'number']] },
+  purchases: { title: 'Compras extras', description: 'Solicite, aprove, anexe orçamento e programe o reembolso.', columns: [['id', 'Nº'], ['date', 'Data'], ['requester', 'Solicitante'], ['team', 'Equipe'], ['item', 'Material / item'], ['justification', 'Justificativa'], ['estimated', 'Estimado'], ['documentName', 'Orçamento'], ['status', 'Status']], fields: [['id', 'Nº solicitação', 'text'], ['date', 'Data solicitação', 'date'], ['requester', 'Solicitante', 'text'], ['team', 'Equipe', 'text'], ['item', 'Material / item', 'text'], ['justification', 'Justificativa', 'text'], ['estimated', 'Valor estimado', 'number']] },
   workExpenses: { title: 'Gastos de Obra', description: 'Controle cotações, faturas e comprovativos separados das compras extras e do fluxo em kwanzas.', columns: [['reference', 'Referência'], ['documentType', 'Tipo'], ['date', 'Data'], ['supplier', 'Fornecedor'], ['project', 'Obra / projeto'], ['scope', 'Objeto / descrição'], ['currency', 'Moeda'], ['subtotal', 'Subtotal'], ['vat', 'IVA'], ['total', 'Total'], ['status', 'Estado']], fields: [] },
   bank: { title: 'Dados bancários', description: 'Área confidencial: uma conta preferencial validada por beneficiário.', columns: [['employee', 'Beneficiário'], ['bank', 'Banco'], ['currency', 'Moeda'], ['account', 'Conta preferencial'], ['status', 'Validação']], fields: [['employee', 'Funcionário', 'text'], ['bank', 'Banco', 'text'], ['currency', 'Moeda', 'text'], ['account', 'IBAN / conta', 'text'], ['status', 'Status', 'text']] },
   paymentRegister: { title: 'Registro de pagamentos', description: 'Cada transferência efetuada ou devolução recebida atualiza o a pagar.', columns: [['id', 'Nº'], ['date', 'Data'], ['beneficiary', 'Beneficiário'], ['nature', 'Natureza'], ['reference', 'Referência'], ['amount', 'Valor'], ['method', 'Forma']], fields: [['id', 'Nº pagamento', 'text'], ['date', 'Data', 'date'], ['beneficiary', 'Beneficiário', 'text'], ['nature', 'Natureza', 'text'], ['reference', 'Referência', 'text'], ['amount', 'Valor AOA', 'number'], ['method', 'Forma de pagamento', 'text']] },
@@ -227,7 +227,7 @@ function renderWorkExpensesCategory() {
     const fields = Object.fromEntries(new FormData(form).entries());
     const file = form.elements.namedItem('document')?.files?.[0];
     const button = byId('workExpenseSubmit');
-    if (!file || !file.name.toLowerCase().endsWith('.pdf') || file.size > 15 * 1024 * 1024) return toast('Anexe um PDF válido com até 15 MB.');
+    if (!isSupportedBudgetFile(file)) return toast('Anexe PDF, imagem ou planilha de até 15 MB.');
     if (!apiToken || !remoteMode) return toast('Entre no sistema conectado ao banco para guardar o PDF da obra.');
     const subtotal = Number(fields.subtotal); const vat = Number(fields.vat); const total = Number(fields.total);
     if (Math.abs(subtotal + vat - total) > 0.02) return toast('O subtotal mais o IVA deve ser igual ao total.');
@@ -360,3 +360,111 @@ document.addEventListener('click', event => { const target = event.target.closes
 byId('quickReport')?.addEventListener('click', () => switchModule('reports'));
 byId('periodChip')?.addEventListener('click', () => toast('Período ativo: Novembro 2026.'));
 bindPwa(); bindAuth(); updateSync();
+
+const budgetScanAccept = '.pdf,.png,.jpg,.jpeg,.webp,.xlsx,.xls,.csv,application/pdf,image/png,image/jpeg,image/webp,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv';
+function isSupportedBudgetFile(file) { return Boolean(file && file.size <= 15 * 1024 * 1024 && /\.(pdf|png|jpe?g|webp|xlsx|xls|csv)$/i.test(file.name)); }
+function budgetScanPanel(id, withFileInput = false) { return `<section class="budget-scan-panel"><div class="budget-scan-heading"><span class="budget-scan-icon">✦</span><div><strong>Leitura de orçamento com IA</strong><p>PDF, imagem ou Excel · confirme os campos antes de gravar.</p></div></div>${withFileInput ? `<label class="budget-scan-file">Selecionar orçamento<input id="purchaseScanFile" type="file" accept="${budgetScanAccept}" /></label>` : '<p class="budget-scan-prompt">Selecione o arquivo no campo de documento abaixo.</p>'}<button class="button secondary budget-scan-button" type="button" data-budget-scan="${id}">✦ Ler orçamento com IA</button><div class="budget-scan-status" role="status" aria-live="polite"></div><small>O arquivo será enviado à IA para extração. O orçamento original será anexado ao registo.</small></section>`; }
+function setScanStatus(panel, title, detail = '', tone = '') { const target = panel?.querySelector('.budget-scan-status'); if (!target) return; target.className = `budget-scan-status ${tone}`; target.innerHTML = `<strong>${esc(title)}</strong>${detail ? `<span>${esc(detail)}</span>` : ''}`; }
+async function extractBudgetWithAi(file, moduleId) {
+  if (!file) throw new Error('Selecione um documento antes de iniciar a leitura.');
+  if (!isSupportedBudgetFile(file)) throw new Error('Use PDF, imagem ou planilha de até 15 MB.');
+  if (!apiToken || !remoteMode) throw new Error('Entre no FlowRoute conectado ao banco para usar a leitura por IA.');
+  const payload = await remoteRequest('/api/document-scan', { method: 'POST', body: JSON.stringify({ module: moduleId, fileName: file.name, fileType: file.type, fileBase64: await fileToBase64(file) }) });
+  return payload.extracted;
+}
+function nextPurchaseId() { const max = (state.purchases || []).reduce((value, item) => Math.max(value, Number(String(item.id || '').match(/^CMP-(\d+)$/i)?.[1] || 0)), 0); return `CMP-${String(max + 1).padStart(3, '0')}`; }
+function setBudgetField(form, name, value) { const field = form?.elements.namedItem(name); if (field && value !== undefined && value !== null && String(value) !== '') field.value = String(value); }
+function scanSummary(data) { return [data.supplier && `Fornecedor: ${data.supplier}`, data.reference && `Referência: ${data.reference}`, data.currency && `Moeda: ${data.currency}`, data.total !== null && data.total !== undefined && `Total identificado: ${Number(data.total).toLocaleString('pt-AO', { maximumFractionDigits: 2 })}`, `Confiança ${data.confidence || 'baixa'}`, data.notes].filter(Boolean).join(' · '); }
+async function scanAndFillPurchase(panel) {
+  const form = byId('genericForm'); const file = byId('purchaseScanFile')?.files?.[0]; const button = panel.querySelector('[data-budget-scan]');
+  if (button) { button.disabled = true; button.textContent = 'A ler documento…'; }
+  setScanStatus(panel, `A analisar ${file?.name || 'documento'}…`, 'A leitura pode levar alguns segundos.');
+  try {
+    const data = await extractBudgetWithAi(file, 'purchases');
+    setBudgetField(form, 'id', form?.elements.namedItem('id')?.value || nextPurchaseId());
+    setBudgetField(form, 'date', data.date);
+    setBudgetField(form, 'item', data.item || data.description);
+    const justification = [data.supplier && `Fornecedor: ${data.supplier}`, data.reference && `Orçamento: ${data.reference}`, data.description].filter(Boolean).join(' · ');
+    setBudgetField(form, 'justification', justification);
+    if (data.total !== null && data.total !== undefined && ['AOA', ''].includes(data.currency)) setBudgetField(form, 'estimated', data.total);
+    const currencyHint = data.currency && data.currency !== 'AOA' ? ` O documento está em ${data.currency}; o valor não foi lançado em Kz.` : '';
+    setScanStatus(panel, 'Leitura concluída — revise os campos e complete solicitante/equipe.', `${scanSummary(data)}${currencyHint}`, data.confidence === 'baixa' ? 'warning' : 'success');
+    toast('Orçamento lido. Revise os dados antes de adicionar a compra.');
+  } catch (error) { setScanStatus(panel, 'Não foi possível ler o orçamento.', error.message, 'warning'); toast(error.message); }
+  finally { if (button) { button.disabled = false; button.textContent = '✦ Ler orçamento com IA'; } }
+}
+async function scanAndFillWorkExpense(panel, form) {
+  const file = form.elements.namedItem('document')?.files?.[0]; const button = panel.querySelector('[data-budget-scan]');
+  if (button) { button.disabled = true; button.textContent = 'A ler documento…'; }
+  setScanStatus(panel, `A analisar ${file?.name || 'documento'}…`, 'A leitura pode levar alguns segundos.');
+  try {
+    const data = await extractBudgetWithAi(file, 'workExpenses');
+    const set = (name, value) => setBudgetField(form, name, value);
+    set('reference', data.reference); set('supplier', data.supplier); set('date', data.date); set('project', data.project);
+    set('scope', [data.item, data.description].filter(Boolean).join(' · '));
+    if (['AOA', 'USD', 'EUR', 'BRL'].includes(data.currency)) set('currency', data.currency); else set('currency', '');
+    if (data.validityDays !== null && data.validityDays !== undefined) set('validityDays', data.validityDays);
+    if (data.subtotal !== null && data.subtotal !== undefined) set('subtotal', data.subtotal);
+    if (data.vat !== null && data.vat !== undefined) set('vat', data.vat);
+    if (data.total !== null && data.total !== undefined) set('total', data.total);
+    set('paymentTerms', data.paymentTerms);
+    const type = form.elements.namedItem('documentType');
+    if (type && ['Cotação', 'Fatura', 'Recibo / comprovativo', 'Contrato'].includes(data.documentType)) { type.value = data.documentType; type.dispatchEvent(new Event('change', { bubbles: true })); }
+    setScanStatus(panel, 'Leitura concluída — confirme cada campo antes de guardar.', scanSummary(data), data.confidence === 'baixa' ? 'warning' : 'success');
+    toast('Orçamento lido. Revise os valores e o IVA antes de guardar.');
+  } catch (error) { setScanStatus(panel, 'Não foi possível ler o orçamento.', error.message, 'warning'); toast(error.message); }
+  finally { if (button) { button.disabled = false; button.textContent = '✦ Ler orçamento com IA'; } }
+}
+const renderGenericBeforeBudgetScan = renderGeneric;
+renderGeneric = function(id) {
+  renderGenericBeforeBudgetScan(id);
+  if (id !== 'purchases') return;
+  const panel = byId('moduleFormPanel'); const form = byId('genericForm');
+  panel?.querySelector('.panel-heading')?.insertAdjacentHTML('afterend', budgetScanPanel('purchases', true));
+  const idInput = form?.elements.namedItem('id'); if (idInput) idInput.required = true;
+  byId('purchaseScanFile')?.addEventListener('change', event => { const file = event.target.files?.[0]; const scanPanel = panel?.querySelector('.budget-scan-panel'); setScanStatus(scanPanel, file ? `Selecionado: ${file.name}` : 'Nenhum arquivo selecionado.'); });
+  panel?.querySelector('[data-budget-scan]')?.addEventListener('click', () => scanAndFillPurchase(panel.querySelector('.budget-scan-panel')));
+  const columns = specs.purchases.columns; const docIndex = columns.findIndex(column => column[0] === 'documentName');
+  byId('moduleHost').querySelectorAll('.module-data-table tbody tr').forEach((row, index) => {
+    const purchase = state.purchases[index]; const cell = row.children[docIndex];
+    if (cell && purchase?.documentName) cell.innerHTML = `<button class="mini-action" type="button" data-purchase-document="${esc(purchase.id)}">Baixar orçamento</button>`;
+  });
+  byId('moduleHost').querySelectorAll('[data-purchase-document]').forEach(button => button.addEventListener('click', async () => {
+    if (!apiToken) return toast('Sua sessão expirou. Entre novamente para baixar o orçamento.');
+    try { const response = await fetch(`${apiBase}/api/purchases/${encodeURIComponent(button.dataset.purchaseDocument)}/document`, { headers: { Authorization: `Bearer ${apiToken}` } }); if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || 'Documento não encontrado.'); } const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = state.purchases.find(item => item.id === button.dataset.purchaseDocument)?.documentName || 'orcamento'; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000); } catch (error) { toast(error.message || 'Não foi possível baixar o orçamento.'); }
+  }));
+  form?.addEventListener('submit', async () => {
+    const file = byId('purchaseScanFile')?.files?.[0]; if (!file) return;
+    const purchaseId = String(form.elements.namedItem('id')?.value || '').trim();
+    const purchase = state.purchases.find(item => String(item.id) === purchaseId);
+    if (!purchase || !apiToken || !remoteMode) { toast('A compra foi gravada, mas o anexo exige uma sessão conectada ao banco.'); return; }
+    try {
+      await syncQueue;
+      const document = await remoteRequest(`/api/purchases/${encodeURIComponent(purchaseId)}/document`, { method: 'POST', body: JSON.stringify({ fileName: file.name, fileType: file.type, fileBase64: await fileToBase64(file) }) });
+      const saved = state.purchases.find(item => String(item.id) === purchaseId); if (saved) saved.documentName = document.document.fileName;
+      persist(); renderAll(); switchModule('purchases'); toast('Compra extra e orçamento guardados no sistema.');
+    } catch (error) { toast(`Compra gravada; falhou o anexo: ${error.message}`); }
+  });
+};
+const renderWorkExpensesBeforeBudgetScan = renderWorkExpensesCategory;
+renderWorkExpensesCategory = function() {
+  renderWorkExpensesBeforeBudgetScan();
+  const form = byId('workExpenseForm'); if (!form) return;
+  const input = form.elements.namedItem('document'); input.accept = budgetScanAccept;
+  const currencySelect = form.elements.namedItem('currency');
+  if (currencySelect) { currencySelect.insertAdjacentHTML('afterbegin', '<option value="">Selecione a moeda</option>'); currencySelect.required = true; currencySelect.value = ''; }
+  const label = input.closest('label'); if (label?.firstChild?.nodeType === Node.TEXT_NODE) label.firstChild.textContent = 'Documento (PDF, imagem ou planilha)';
+  form.insertAdjacentHTML('afterbegin', budgetScanPanel('workExpenses'));
+  const panel = form.querySelector('.budget-scan-panel');
+  form.querySelector('[data-budget-scan]')?.addEventListener('click', () => scanAndFillWorkExpense(panel, form));
+  input.addEventListener('change', () => setScanStatus(panel, input.files?.[0] ? `Selecionado: ${input.files[0].name}` : 'Nenhum arquivo selecionado.'));
+  byId('moduleHost').querySelectorAll('[data-work-document]').forEach(button => { button.textContent = 'Baixar documento'; });
+};
+const handleRowActionBeforePurchaseDocument = handleRowAction;
+handleRowAction = function(id, index, action) {
+  if (id !== 'purchases' || action !== 'delete-row') return handleRowActionBeforePurchaseDocument(id, index, action);
+  const record = state.purchases[index]; const label = record?.id || 'selecionado';
+  if (!record || !window.confirm(`Excluir o registo ${label}?`)) return;
+  state.purchases.splice(index, 1); persist(); renderAll(); switchModule('purchases'); toast('Registo excluído.');
+  if (record.documentName && apiToken) syncQueue.then(() => remoteRequest(`/api/purchases/${encodeURIComponent(record.id)}/document`, { method: 'DELETE' })).catch(() => {});
+};

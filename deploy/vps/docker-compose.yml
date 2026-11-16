@@ -1,0 +1,71 @@
+name: flowroute-finance-vps
+
+services:
+  flowroute-db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flowroute}
+      POSTGRES_USER: ${POSTGRES_USER:-flowroute}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Crie POSTGRES_PASSWORD no arquivo .env}
+    volumes:
+      - flowroute-finance-vps-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - flowroute-private
+
+  flowroute-app:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flowroute}:${POSTGRES_PASSWORD}@flowroute-db:5432/${POSTGRES_DB:-flowroute}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    depends_on:
+      flowroute-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FLOWROUTE_PORT:-8311}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - flowroute-private
+
+  flowroute-migrate:
+    profiles: ["migration"]
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flowroute}:${POSTGRES_PASSWORD}@flowroute-db:5432/${POSTGRES_DB:-flowroute}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    depends_on:
+      flowroute-db:
+        condition: service_healthy
+    volumes:
+      - ./migrate:/migration:ro
+    command: ["node", "/app/deploy/vps/migrate/import.mjs", "/migration/flowroute.snapshot.json"]
+    networks:
+      - flowroute-private
+
+volumes:
+  flowroute-finance-vps-postgres:
+    name: flowroute-finance-vps-postgres
+
+networks:
+  flowroute-private:
+    name: flowroute-finance-vps-private
+    driver: bridge

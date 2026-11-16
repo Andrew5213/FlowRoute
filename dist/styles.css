@@ -193,3 +193,17 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .dashboard-work-expense-value .dashboard-status { font-size:8px; }
 @media (max-width:900px) { .dashboard-work-expense-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }.dashboard-work-expense-currencies { grid-column:1/-1; } }
 @media (max-width:700px) { .dashboard-work-expense-summary { grid-template-columns:1fr 1fr; padding-left:14px; padding-right:14px; }.dashboard-work-expense-count { padding:9px; }.dashboard-work-expense-count strong { font-size:14px; }.dashboard-work-expense-list { padding-left:14px; padding-right:14px; }.dashboard-work-expense-row { gap:7px; }.dashboard-work-expense-copy small { max-width:42vw; }.dashboard-work-expense-value > strong { font-size:9px; } }
+.budget-scan-panel { display:grid; gap:9px; margin:0 20px 15px; padding:13px; border:1px solid #d8e5f4; border-radius:8px; background:linear-gradient(135deg,#f6f9ff,#fbfdff); }
+.budget-scan-heading { display:flex; align-items:flex-start; gap:9px; }
+.budget-scan-icon { display:grid; place-items:center; flex:0 0 25px; width:25px; height:25px; border-radius:7px; color:#3976c9; background:#e4efff; font-size:14px; }
+.budget-scan-heading strong { color:#30445f; font-size:11px; }
+.budget-scan-heading p,.budget-scan-prompt { margin:3px 0 0; color:#7f8da0; font-size:9px; line-height:1.45; }
+.budget-scan-file { display:flex; flex-direction:column; gap:6px; color:#68778b; font-size:9px; font-weight:600; }
+.budget-scan-file input { width:100%; min-width:0; border:1px solid #dfe6ee; border-radius:6px; background:#fff; padding:8px; font-size:10px; }
+.budget-scan-button { width:100%; justify-content:center; }
+.budget-scan-status { display:grid; gap:3px; color:#718096; font-size:9px; line-height:1.45; overflow-wrap:anywhere; }
+.budget-scan-status strong { color:#53677f; font-size:10px; }
+.budget-scan-status.success strong { color:#248063; }
+.budget-scan-status.warning strong { color:#a36a21; }
+.budget-scan-panel > small { color:#9aa6b5; font-size:8px; line-height:1.45; }
+@media (max-width:700px) { .budget-scan-panel { margin-left:16px; margin-right:16px; } }
