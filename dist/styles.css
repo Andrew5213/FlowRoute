@@ -55,6 +55,7 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .module-table,.module-form { min-width:0; }
 .module-form { position:sticky; top:18px; }
 .work-expenses-section { display:grid; gap:18px; margin-bottom:18px; min-width:0; }
+.work-expenses-section { grid-template-columns:minmax(0, 1.55fr) minmax(290px, .85fr); align-items:start; }
 .work-expenses-ledger,.work-expenses-form-panel { min-width:0; }
 .work-expenses-table { min-width:1060px; }
 .work-expenses-table td { vertical-align:top; max-width:260px; }
@@ -67,6 +68,7 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .work-expenses-form label { display:flex; flex-direction:column; gap:6px; margin-bottom:13px; color:#68778b; font-size:10px; font-weight:600; }
 .work-expenses-form input,.work-expenses-form select,.work-expenses-form textarea { width:100%; min-width:0; border:1px solid #dfe6ee; border-radius:6px; background:#fff; color:#2d3e54; padding:9px 10px; font:inherit; font-size:11px; }
 .work-expenses-form textarea { min-height:86px; resize:vertical; line-height:1.5; }
+.work-expenses-form-panel { min-width:0; }
 .work-expenses-form input:focus,.work-expenses-form select:focus,.work-expenses-form textarea:focus { outline:none; border-color:#82a9e3; box-shadow:0 0 0 3px rgba(60,118,217,.1); }
 .module-data-table { min-width:850px; }
 .module-data-table td,.module-data-table th { padding-left:16px; padding-right:16px; }
@@ -171,3 +173,4 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .composition-empty-list { padding:12px; border:1px dashed #cbd8e6; border-radius:8px; }
 .composition-empty-list p { margin:0 0 10px; color:#718096; font-size:10px; }.composition-add-person { margin-top:8px; align-self:flex-start; padding:0; font-size:9px; }
 @media (max-width:700px) { .form-row.three { grid-template-columns:1fr; }.work-expenses-table { min-width:980px; } }
+@media (max-width:1100px) { .work-expenses-section { grid-template-columns:1fr; } }
