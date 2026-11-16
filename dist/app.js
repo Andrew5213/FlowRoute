@@ -92,7 +92,8 @@ const specs = {
 };
 
 const storageKey = 'flowroute-finance-state-v2';
-let state = loadState();
+let legacyState = loadLegacyState();
+let state = structuredClone(seed);
 let lastExtractedFile = '';
 let distanceMap = null;
 let distanceMapElement = null;
@@ -137,24 +138,26 @@ function mergeState(source) {
   next.schemaVersion = 4;
   return next;
 }
-function loadState() {
-  try { const stored = JSON.parse(localStorage.getItem(storageKey)); return stored ? mergeState(stored) : structuredClone(seed); } catch { return structuredClone(seed); }
+function loadLegacyState() {
+  try { const stored = JSON.parse(localStorage.getItem(storageKey)); return stored ? mergeState(stored) : null; } catch { return null; }
 }
 function profileFor(user = currentUser) { return state.profiles?.find(profile => profile.id === user?.profileId) || state.profiles?.find(profile => profile.id === 'administrador'); }
 function canAccess(moduleId) { return moduleId === 'summary' || Boolean(profileFor()?.permissions?.includes(moduleId)); }
 function accessibleModules() { return moduleDefs.filter(item => canAccess(item.id)); }
 function updateCurrentUserUi() { const profile = profileFor(); const name = currentUser?.name || 'Visitante'; const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase(); if (byId('currentAccessBadge')) byId('currentAccessBadge').textContent = profile ? `Perfil · ${profile.name}` : 'Acesso'; if (byId('currentUserName')) byId('currentUserName').textContent = name; if (byId('currentUserRole')) byId('currentUserRole').textContent = profile?.name || 'Sem perfil'; if (byId('currentUserAvatar')) byId('currentUserAvatar').textContent = initials || 'AM'; }
-function persist() { localStorage.setItem(storageKey, JSON.stringify(state)); updateSync(); if (apiToken) { syncQueue = syncQueue.then(() => syncServerState()).catch(() => {}); } }
-function updateSync() { const now = new Date(); const t = `Atualizado ${now.toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}`; if (byId('lastSync')) byId('lastSync').textContent = t; if (byId('footerSync')) byId('footerSync').textContent = `${now.toLocaleDateString('pt-AO', { day: '2-digit', month: 'short', year: 'numeric' })}, ${t.replace('Atualizado ', '')}`; }
+function persist() { if (!remoteMode) { toast('Entre no sistema conectado ao banco para guardar as alterações.'); return; } updateSync('A guardar no banco…'); syncQueue = syncQueue.then(() => syncServerState()).catch(error => { remoteMode = false; showLogin(error.message || 'Não foi possível guardar no banco. Entre novamente.'); }); }
+function updateSync(status = 'Guardado no banco') { const now = new Date(); const t = `${status} · ${now.toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}`; if (byId('lastSync')) byId('lastSync').textContent = t; if (byId('footerSync')) byId('footerSync').textContent = `${now.toLocaleDateString('pt-AO', { day: '2-digit', month: 'short', year: 'numeric' })}, ${t}`; }
 function toast(message) { const el = byId('toast'); el.textContent = message; el.classList.add('show'); window.clearTimeout(toast.timer); toast.timer = window.setTimeout(() => el.classList.remove('show'), 3600); }
 function showLogin(message = '') { currentUser = null; byId('appShell').hidden = true; byId('loginScreen').hidden = false; byId('loginError').textContent = message; window.setTimeout(() => byId('loginUsername')?.focus(), 0); }
 function showApp() { byId('loginScreen').hidden = true; byId('appShell').hidden = false; updateCurrentUserUi(); renderAll(); }
-function applyServerState(remoteState) { state = mergeState(remoteState || {}); localStorage.setItem(storageKey, JSON.stringify(state)); }
-async function remoteRequest(path, options = {}) { const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }; if (apiToken) headers.Authorization = `Bearer ${apiToken}`; const response = await fetch(`${apiBase}${path}`, { ...options, headers }); const payload = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(payload.error || 'Serviço remoto indisponível.'); error.status = response.status; throw error; } return payload; }
-async function restoreRemoteSession() { if (!apiToken) return false; try { const payload = await remoteRequest('/api/auth/me'); applyServerState(payload.state); currentUser = payload.user; remoteMode = true; localStorage.setItem(sessionKey, JSON.stringify({ id: currentUser.id })); return true; } catch { apiToken = ''; localStorage.removeItem(apiTokenKey); return false; } }
-async function loginRemote(username, password) { try { const response = await fetch(`${apiBase}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, bootstrapState: state }) }); const payload = await response.json().catch(() => ({})); if (response.status === 503) return null; if (!response.ok) return { error: payload.error || 'Usuário ou senha inválidos.' }; apiToken = payload.token; remoteMode = true; localStorage.setItem(apiTokenKey, apiToken); applyServerState(payload.state); currentUser = payload.user; localStorage.setItem(sessionKey, JSON.stringify({ id: currentUser.id })); return true; } catch { return null; } }
-async function syncServerState() { if (!apiToken) return; try { const payload = await remoteRequest('/api/state', { method: 'PUT', body: JSON.stringify({ state }) }); applyServerState(payload.state); currentUser = payload.user; remoteMode = true; } catch (error) { if (error.status === 401) { apiToken = ''; localStorage.removeItem(apiTokenKey); remoteMode = false; } } }
-function bindAuth() { byId('loginForm')?.addEventListener('submit', async event => { event.preventDefault(); const loginForm = event.currentTarget; const submit = loginForm.querySelector('button[type="submit"]'); if (submit) { submit.disabled = true; submit.textContent = 'A entrar…'; } const form = new FormData(loginForm); const username = String(form.get('username') || '').trim().toLowerCase(); const password = String(form.get('password') || ''); const remoteResult = await loginRemote(username, password); if (remoteResult === true) { loginForm.reset(); showApp(); } else if (remoteResult?.error) { byId('loginError').textContent = remoteResult.error; } else { const user = state.users.find(item => item.active && (item.username.toLowerCase() === username || String(item.email || '').trim().toLowerCase() === username) && item.password === password); if (!user) byId('loginError').textContent = 'Usuário ou senha inválidos.'; else { currentUser = user; localStorage.setItem(sessionKey, JSON.stringify({ id: user.id })); loginForm.reset(); showApp(); } } if (submit) { submit.disabled = false; submit.textContent = 'Entrar'; } }); byId('logoutButton')?.addEventListener('click', () => { localStorage.removeItem(sessionKey); localStorage.removeItem(apiTokenKey); apiToken = ''; remoteMode = false; showLogin(); }); showLogin(); restoreRemoteSession().then(restored => { if (restored) showApp(); else { const savedSession = localStorage.getItem(sessionKey); if (savedSession) { try { const saved = JSON.parse(savedSession); currentUser = state.users.find(user => user.id === saved.id && user.active) || null; } catch { currentUser = null; } } if (currentUser) showApp(); } }); }
+function clearLegacyBrowserData() { localStorage.removeItem(storageKey); localStorage.removeItem(sessionKey); localStorage.removeItem(apiTokenKey); legacyState = null; apiToken = ''; }
+function legacyStateForMigration() { if (!legacyState) return null; const snapshot = structuredClone(legacyState); if (Array.isArray(snapshot.users)) snapshot.users = snapshot.users.map(({ password, ...user }) => ({ ...user, password: '' })); return snapshot; }
+function applyServerState(remoteState) { state = mergeState(remoteState || {}); }
+async function remoteRequest(path, options = {}) { const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }; if (apiToken) headers.Authorization = `Bearer ${apiToken}`; const response = await fetch(`${apiBase}${path}`, { ...options, headers, credentials: 'include' }); const payload = await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(payload.error || 'Serviço remoto indisponível.'); error.status = response.status; throw error; } return payload; }
+async function restoreRemoteSession() { try { let payload = await remoteRequest('/api/auth/me'); if (legacyState) { const migrated = await remoteRequest('/api/state/migrate-local', { method: 'POST', body: JSON.stringify({ state: legacyStateForMigration() }) }); payload = { ...payload, state: migrated.state, migration: migrated.migration }; } applyServerState(payload.state); currentUser = payload.user; remoteMode = true; clearLegacyBrowserData(); if (payload.migration?.imported) toast(`${payload.migration.imported} registos locais transferidos para o banco.`); return true; } catch (error) { if (error.status === 401) { apiToken = ''; localStorage.removeItem(apiTokenKey); } return false; } }
+async function loginRemote(username, password) { try { const migrationState = legacyStateForMigration(); const bootstrapState = structuredClone(migrationState || state); if (Array.isArray(bootstrapState.users)) bootstrapState.users = []; const response = await fetch(`${apiBase}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ username, password, bootstrapState, legacyState: migrationState }) }); const payload = await response.json().catch(() => ({})); if (!response.ok) return { error: payload.error || (response.status === 503 ? 'Banco de dados indisponível. Os dados locais foram preservados.' : 'Usuário ou senha inválidos.') }; apiToken = ''; remoteMode = true; applyServerState(payload.state); currentUser = payload.user; clearLegacyBrowserData(); return { ok: true, migration: payload.migration }; } catch { return { error: 'Não foi possível conectar ao banco. Verifique a conexão e tente novamente; os dados locais foram preservados.' }; } }
+async function syncServerState() { if (!remoteMode) return; try { const payload = await remoteRequest('/api/state', { method: 'PUT', body: JSON.stringify({ state }) }); applyServerState(payload.state); currentUser = payload.user; remoteMode = true; updateSync('Guardado no banco'); } catch (error) { remoteMode = false; if (error.status === 401) { apiToken = ''; localStorage.removeItem(apiTokenKey); } showLogin(error.status === 401 ? 'Sua sessão expirou. Entre novamente; as alterações não sincronizadas não foram guardadas.' : 'Falha ao guardar no banco. Verifique a conexão e entre novamente.'); throw error; } }
+function bindAuth() { byId('loginForm')?.addEventListener('submit', async event => { event.preventDefault(); const loginForm = event.currentTarget; const submit = loginForm.querySelector('button[type="submit"]'); if (submit) { submit.disabled = true; submit.textContent = 'A entrar…'; } const form = new FormData(loginForm); const username = String(form.get('username') || '').trim().toLowerCase(); const password = String(form.get('password') || ''); const remoteResult = await loginRemote(username, password); if (remoteResult?.ok) { loginForm.reset(); showApp(); if (remoteResult.migration?.imported) toast(`${remoteResult.migration.imported} registos locais transferidos para o banco.`); } else byId('loginError').textContent = remoteResult?.error || 'Não foi possível entrar no sistema.'; if (submit) { submit.disabled = false; submit.textContent = 'Entrar'; } }); byId('logoutButton')?.addEventListener('click', async () => { try { await remoteRequest('/api/auth/logout', { method: 'POST' }); } catch {} apiToken = ''; remoteMode = false; showLogin(); }); showLogin(); restoreRemoteSession().then(restored => { if (restored) showApp(); else if (apiToken) showLogin('Sua sessão expirou. Entre novamente para consultar os dados do banco.'); }); }
 function defFor(id) { return moduleDefs.find(item => item.id === id); }
 function renderNav() { byId('moduleNav').innerHTML = `<ul class="nav-list">${accessibleModules().map(item => `<li><button class="nav-item ${item.id === 'summary' ? 'active' : ''}" data-module-target="${item.id}"><span class="nav-icon">${item.icon}</span><span>${item.label}</span>${item.id === 'accounting' ? `<span class="nav-badge" id="expenseBadge">${state.expenses.length}</span>` : ''}</button></li>`).join('')}</ul>`; document.querySelectorAll('[data-module-target]').forEach(btn => btn.addEventListener('click', () => switchModule(btn.dataset.moduleTarget))); updateCurrentUserUi(); }
 function switchModule(id) { const item = defFor(id) || defFor('summary'); if (!canAccess(item.id)) { toast('Seu perfil não tem acesso a este módulo.'); return switchModule('summary'); } const isSummary = item.id === 'summary'; byId('view-dashboard').classList.toggle('active', isSummary); byId('view-module').classList.toggle('active', !isSummary); document.querySelectorAll('.nav-item').forEach(btn => btn.classList.toggle('active', btn.dataset.moduleTarget === item.id)); byId('pageTitle').textContent = item.label; if (!isSummary) renderModule(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -228,7 +231,7 @@ function renderWorkExpensesCategory() {
     const file = form.elements.namedItem('document')?.files?.[0];
     const button = byId('workExpenseSubmit');
     if (!isSupportedBudgetFile(file)) return toast('Anexe PDF, imagem ou planilha de até 15 MB.');
-    if (!apiToken || !remoteMode) return toast('Entre no sistema conectado ao banco para guardar o PDF da obra.');
+    if (!remoteMode) return toast('Entre no sistema conectado ao banco para guardar o PDF da obra.');
     const subtotal = Number(fields.subtotal); const vat = Number(fields.vat); const total = Number(fields.total);
     if (Math.abs(subtotal + vat - total) > 0.02) return toast('O subtotal mais o IVA deve ser igual ao total.');
 
@@ -239,15 +242,14 @@ function renderWorkExpensesCategory() {
       await syncQueue;
       const payload = await remoteRequest('/api/work-expenses', { method: 'POST', body: JSON.stringify({ expense, fileName: file.name, fileBase64: await fileToBase64(file) }) });
       state.workExpenses = [...(state.workExpenses || []), payload.expense];
-      localStorage.setItem(storageKey, JSON.stringify(state));
       renderAll(); switchModule('workExpenses'); toast('Gasto de obra e PDF guardados no sistema.');
     } catch (error) { toast(error.message || 'Não foi possível guardar o gasto da obra e o PDF.'); }
     finally { if (button) { button.disabled = false; button.textContent = '＋ Guardar gasto e PDF'; } }
   });
   byId('moduleHost').querySelectorAll('[data-work-document]').forEach(button => button.addEventListener('click', async () => {
-    if (!apiToken) return toast('Sua sessão expirou. Entre novamente para baixar o PDF.');
+    if (!remoteMode) return toast('Sua sessão expirou. Entre novamente para baixar o PDF.');
     try {
-      const response = await fetch(`${apiBase}/api/work-expenses/${encodeURIComponent(button.dataset.workDocument)}/document`, { headers: { Authorization: `Bearer ${apiToken}` } });
+      const response = await fetch(`${apiBase}/api/work-expenses/${encodeURIComponent(button.dataset.workDocument)}/document`, { credentials: 'include' });
       if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || 'PDF não encontrado.'); }
       const blob = await response.blob(); const url = URL.createObjectURL(blob); const record = records.find(item => item.id === button.dataset.workDocument); const anchor = document.createElement('a'); anchor.href = url; anchor.download = record?.documentName || 'documento-obra.pdf'; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (error) { toast(error.message || 'Não foi possível baixar o PDF.'); }
@@ -368,7 +370,7 @@ function setScanStatus(panel, title, detail = '', tone = '') { const target = pa
 async function extractBudgetWithAi(file, moduleId) {
   if (!file) throw new Error('Selecione um documento antes de iniciar a leitura.');
   if (!isSupportedBudgetFile(file)) throw new Error('Use PDF, imagem ou planilha de até 15 MB.');
-  if (!apiToken || !remoteMode) throw new Error('Entre no FlowRoute conectado ao banco para usar a leitura por IA.');
+  if (!remoteMode) throw new Error('Entre no FlowRoute conectado ao banco para usar a leitura por IA.');
   const payload = await remoteRequest('/api/document-scan', { method: 'POST', body: JSON.stringify({ module: moduleId, fileName: file.name, fileType: file.type, fileBase64: await fileToBase64(file) }) });
   return payload.extracted;
 }
@@ -430,14 +432,14 @@ renderGeneric = function(id) {
     if (cell && purchase?.documentName) cell.innerHTML = `<button class="mini-action" type="button" data-purchase-document="${esc(purchase.id)}">Baixar orçamento</button>`;
   });
   byId('moduleHost').querySelectorAll('[data-purchase-document]').forEach(button => button.addEventListener('click', async () => {
-    if (!apiToken) return toast('Sua sessão expirou. Entre novamente para baixar o orçamento.');
-    try { const response = await fetch(`${apiBase}/api/purchases/${encodeURIComponent(button.dataset.purchaseDocument)}/document`, { headers: { Authorization: `Bearer ${apiToken}` } }); if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || 'Documento não encontrado.'); } const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = state.purchases.find(item => item.id === button.dataset.purchaseDocument)?.documentName || 'orcamento'; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000); } catch (error) { toast(error.message || 'Não foi possível baixar o orçamento.'); }
+    if (!remoteMode) return toast('Sua sessão expirou. Entre novamente para baixar o orçamento.');
+    try { const response = await fetch(`${apiBase}/api/purchases/${encodeURIComponent(button.dataset.purchaseDocument)}/document`, { credentials: 'include' }); if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || 'Documento não encontrado.'); } const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = state.purchases.find(item => item.id === button.dataset.purchaseDocument)?.documentName || 'orcamento'; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000); } catch (error) { toast(error.message || 'Não foi possível baixar o orçamento.'); }
   }));
   form?.addEventListener('submit', async () => {
     const file = byId('purchaseScanFile')?.files?.[0]; if (!file) return;
     const purchaseId = String(form.elements.namedItem('id')?.value || '').trim();
     const purchase = state.purchases.find(item => String(item.id) === purchaseId);
-    if (!purchase || !apiToken || !remoteMode) { toast('A compra foi gravada, mas o anexo exige uma sessão conectada ao banco.'); return; }
+    if (!purchase || !remoteMode) { toast('A compra foi gravada, mas o anexo exige uma sessão conectada ao banco.'); return; }
     try {
       await syncQueue;
       const document = await remoteRequest(`/api/purchases/${encodeURIComponent(purchaseId)}/document`, { method: 'POST', body: JSON.stringify({ fileName: file.name, fileType: file.type, fileBase64: await fileToBase64(file) }) });
@@ -466,5 +468,5 @@ handleRowAction = function(id, index, action) {
   const record = state.purchases[index]; const label = record?.id || 'selecionado';
   if (!record || !window.confirm(`Excluir o registo ${label}?`)) return;
   state.purchases.splice(index, 1); persist(); renderAll(); switchModule('purchases'); toast('Registo excluído.');
-  if (record.documentName && apiToken) syncQueue.then(() => remoteRequest(`/api/purchases/${encodeURIComponent(record.id)}/document`, { method: 'DELETE' })).catch(() => {});
+  if (record.documentName && remoteMode) syncQueue.then(() => remoteRequest(`/api/purchases/${encodeURIComponent(record.id)}/document`, { method: 'DELETE' })).catch(() => {});
 };

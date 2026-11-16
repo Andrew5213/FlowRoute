@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -46,7 +46,11 @@ function sendJson(response, status, payload) {
 }
 
 const allowedOrigins = new Set(['https://flowroute-finance.andrew5213.chatgpt.site', 'https://flowroute-finance-production.up.railway.app', 'http://localhost:3000', 'http://127.0.0.1:3000']);
-function setCors(request, response) { const origin = request.headers.origin; if (origin && allowedOrigins.has(origin)) { response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS'); response.setHeader('Vary', 'Origin'); } }
+function setCors(request, response) { const origin = request.headers.origin; if (origin && allowedOrigins.has(origin)) { response.setHeader('Access-Control-Allow-Origin', origin); response.setHeader('Access-Control-Allow-Credentials', 'true'); response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS'); response.setHeader('Vary', 'Origin'); } }
+const sessionCookieName = 'flowroute_session';
+function cookieSameSite(request) { try { return new URL(request.headers.origin || '').host === request.headers.host ? 'Strict' : 'None'; } catch { return 'Strict'; } }
+function setSessionCookie(response, request, token, maxAge = 604800) { response.setHeader('Set-Cookie', `${sessionCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=${cookieSameSite(request)}; Max-Age=${maxAge}`); }
+function clearSessionCookie(response, request) { setSessionCookie(response, request, '', 0); }
 function hashPassword(password, salt = randomBytes(16).toString('hex')) { return `${salt}:${scryptSync(String(password), salt, 64).toString('hex')}`; }
 function verifyPassword(password, stored) { try { const [salt, expectedHex] = String(stored || '').split(':'); const expected = Buffer.from(expectedHex || '', 'hex'); const actual = scryptSync(String(password), salt, 64); return expected.length === actual.length && timingSafeEqual(expected, actual); } catch { return false; } }
 function publicUser(user) { return { id: user.id, name: user.name, username: user.username, email: user.email || '', password: '', profileId: user.profile_id, active: user.active }; }
@@ -70,7 +74,66 @@ function hasWorkExpensesAccess(user, state) { return Boolean(user && (user.profi
 function visibleStateForUser(state, user) { return hasWorkExpensesAccess(user, state) ? state : { ...state, workExpenses: [] }; }
 async function withCurrentUsers(data) { return { ...data, users: (await getUsers()).map(publicUser) }; }
 async function saveState(incoming, actor) { const data = incoming && typeof incoming === 'object' ? structuredClone(incoming) : {}; const previousState = await getState(); if (!hasWorkExpensesAccess(actor, previousState)) data.workExpenses = previousState.workExpenses || []; data.schemaVersion = 4; const incomingUsers = Array.isArray(data.users) ? data.users : []; for (const user of incomingUsers) { if (!user.username) continue; const existing = await pool.query('SELECT password_hash FROM app_users WHERE id = $1 OR username = $2 LIMIT 1', [String(user.id || ''), String(user.username).trim().toLowerCase()]); const passwordHash = user.password ? hashPassword(user.password) : existing.rows[0]?.password_hash || hashPassword('changeme'); await pool.query('INSERT INTO app_users (id, name, username, email, password_hash, profile_id, active) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, username = EXCLUDED.username, email = EXCLUDED.email, profile_id = EXCLUDED.profile_id, active = EXCLUDED.active, password_hash = CASE WHEN $8 = TRUE THEN EXCLUDED.password_hash ELSE app_users.password_hash END', [String(user.id || randomUUID()), String(user.name || user.username), String(user.username).trim().toLowerCase(), String(user.email || '').trim(), passwordHash, String(user.profileId || 'tecnico'), user.active !== false, Boolean(user.password)]); } const keepIds = incomingUsers.map(user => String(user.id || '')).filter(Boolean); if (keepIds.length) await pool.query('DELETE FROM app_users WHERE id <> $1 AND NOT (id = ANY($2::text[]))', [actor.id, keepIds]); data.users = (await getUsers()).map(publicUser); await pool.query('INSERT INTO app_state (id, data, updated_at) VALUES (1, $1, NOW()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()', [JSON.stringify(data)]); return data; }
-function tokenFrom(request) { const value = request.headers.authorization || ''; return value.startsWith('Bearer ') ? value.slice(7) : ''; }
+let browserMigrationsTablePromise = null;
+async function ensureBrowserMigrationsTable() {
+  if (!browserMigrationsTablePromise) browserMigrationsTablePromise = pool.query(`CREATE TABLE IF NOT EXISTS browser_state_migrations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    fingerprint TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, fingerprint)
+  )`).catch(error => { browserMigrationsTablePromise = null; throw error; });
+  await browserMigrationsTablePromise;
+}
+function legacyRowKey(stateKey, row) {
+  if (!row || typeof row !== 'object') return JSON.stringify(row);
+  if (row.id !== undefined && row.id !== null && String(row.id) !== '') return `id:${row.id}`;
+  const fields = {
+    parameters: ['name'], composition: ['team', 'employee', 'role', 'paper'],
+    bank: ['employee', 'bank'], payments: ['beneficiary', 'company', 'front'],
+    fleet: ['vehicle'], distances: ['origin', 'destination']
+  }[stateKey];
+  if (fields?.some(field => row[field] !== undefined && row[field] !== '')) return fields.map(field => String(row[field] ?? '')).join('\u0000');
+  return JSON.stringify(row);
+}
+async function importLegacyBrowserState(input, user) {
+  const current = await getState();
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return { state: current, migration: { imported: 0, conflicts: 0 } };
+  const legacy = structuredClone(input);
+  if (Array.isArray(legacy.users)) legacy.users = legacy.users.map(({ password, ...safeUser }) => ({ ...safeUser, password: '' }));
+  const fingerprint = createHash('sha256').update(JSON.stringify(legacy)).digest('hex');
+  await ensureBrowserMigrationsTable();
+  const client = await pool.connect();
+  let imported = 0, conflicts = 0;
+  try {
+    await client.query('BEGIN');
+    const saved = await client.query('SELECT data FROM app_state WHERE id = 1 FOR UPDATE');
+    const merged = structuredClone(saved.rows[0]?.data || current);
+    for (const [key, localValue] of Object.entries(legacy)) {
+      if (key === 'users' || key === 'profiles' || key === 'schemaVersion') continue;
+      const remoteValue = merged[key];
+      if (Array.isArray(localValue) && Array.isArray(remoteValue)) {
+        const existing = new Map(remoteValue.map(row => [legacyRowKey(key, row), row]));
+        for (const row of localValue) {
+          const rowKey = legacyRowKey(key, row);
+          if (!existing.has(rowKey)) { remoteValue.push(row); existing.set(rowKey, row); imported += 1; }
+          else if (JSON.stringify(existing.get(rowKey)) !== JSON.stringify(row)) conflicts += 1;
+        }
+      } else if (remoteValue === undefined && localValue !== undefined) merged[key] = localValue;
+      else if (localValue !== undefined && JSON.stringify(remoteValue) !== JSON.stringify(localValue)) conflicts += 1;
+    }
+    merged.schemaVersion = Math.max(Number(merged.schemaVersion || 0), Number(legacy.schemaVersion || 0), 4);
+    await client.query('UPDATE app_state SET data = $1, updated_at = NOW() WHERE id = 1', [JSON.stringify(merged)]);
+    await client.query('INSERT INTO browser_state_migrations (id, user_id, fingerprint, payload) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, fingerprint) DO NOTHING', [randomUUID(), user.id, fingerprint, JSON.stringify(legacy)]);
+    await client.query('COMMIT');
+    return { state: merged, migration: { imported, conflicts } };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally { client.release(); }
+}
+function tokenFrom(request) { const value = request.headers.authorization || ''; if (value.startsWith('Bearer ')) return value.slice(7); const cookies = String(request.headers.cookie || '').split(';').map(part => part.trim()); const session = cookies.find(part => part.startsWith(`${sessionCookieName}=`)); try { return session ? decodeURIComponent(session.slice(sessionCookieName.length + 1)) : ''; } catch { return ''; } }
 async function authenticatedUser(request) { const token = tokenFrom(request); if (!pool || !token) return null; const memorySession = sessions.get(token); if (memorySession && memorySession.expiresAt > Date.now()) return memorySession.user; if (memorySession) sessions.delete(token); const result = await pool.query('SELECT u.id, u.name, u.username, u.email, u.profile_id, u.active, s.expires_at FROM app_sessions s JOIN app_users u ON u.id = s.user_id WHERE s.token = $1 AND s.expires_at > NOW()', [token]); if (!result.rows[0]) return null; const user = result.rows[0]; sessions.set(token, { user, expiresAt: new Date(user.expires_at).getTime() }); return user; }
 async function readRequestBody(request) { let body = ''; for await (const chunk of request) body += chunk; if (!body) return {}; try { return JSON.parse(body); } catch { return {}; } }
 let workExpenseDocumentsTablePromise = null;
@@ -342,7 +405,75 @@ async function handleWorkExpenseApi(request, response, requestUrl) {
     return true;
   }
 }
-async function handleApi(request, response, requestUrl) { setCors(request, response); if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return true; } if (!requestUrl.pathname.startsWith('/api/')) return false; if (request.method === 'GET' && requestUrl.pathname === '/api/health') { sendJson(response, 200, { ok: true, database: Boolean(pool), service: 'flowroute-finance' }); return true; } if (!pool) { sendJson(response, 503, { error: 'Banco de dados não configurado neste ambiente.' }); return true; } try { if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') { const body = await readRequestBody(request); await ensureDatabase(body.bootstrapState); const login = String(body.username || '').trim(); if (!login) { sendJson(response, 401, { error: 'Informe seu usuário ou e-mail.' }); return true; } const result = await pool.query('SELECT id, name, username, email, password_hash, profile_id, active FROM app_users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) ORDER BY (LOWER(username) = LOWER($1)) DESC, created_at ASC LIMIT 1', [login]); const user = result.rows[0]; if (!user || !user.active || !verifyPassword(body.password || '', user.password_hash)) { sendJson(response, 401, { error: 'Usuário ou senha inválidos.' }); return true; } const token = randomBytes(32).toString('hex'); const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7; await pool.query('INSERT INTO app_sessions (token, user_id, expires_at) VALUES ($1, $2, TO_TIMESTAMP($3 / 1000.0))', [token, user.id, expiresAt]); sessions.set(token, { user, expiresAt }); const rawState = await getState(); const data = await withCurrentUsers(visibleStateForUser(rawState, user)); sendJson(response, 200, { token, user: publicUser(user), state: data }); return true; } if (request.method === 'GET' && requestUrl.pathname === '/api/auth/me') { const user = await authenticatedUser(request); if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; } sendJson(response, 200, { user: publicUser(user), state: await withCurrentUsers(visibleStateForUser(await getState(), user)) }); return true; } if (request.method === 'GET' && requestUrl.pathname === '/api/state') { const user = await authenticatedUser(request); if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; } sendJson(response, 200, { state: await withCurrentUsers(visibleStateForUser(await getState(), user)), user: publicUser(user) }); return true; } if (request.method === 'PUT' && requestUrl.pathname === '/api/state') { const user = await authenticatedUser(request); if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; } const body = await readRequestBody(request); const state = await saveState(body.state, user); sendJson(response, 200, { state: await withCurrentUsers(visibleStateForUser(state, user)), user: publicUser(user) }); return true; } sendJson(response, 404, { error: 'Endpoint não encontrado.' }); return true; } catch (error) { console.error('API error:', error); sendJson(response, 500, { error: error.message || 'Erro interno do servidor.' }); return true; } }
+async function handleApi(request, response, requestUrl) {
+  setCors(request, response);
+  if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return true; }
+  if (!requestUrl.pathname.startsWith('/api/')) return false;
+  if (request.method === 'GET' && requestUrl.pathname === '/api/health') { sendJson(response, 200, { ok: true, database: Boolean(pool), service: 'flowroute-finance' }); return true; }
+  if (!pool) { sendJson(response, 503, { error: 'Banco de dados não configurado neste ambiente.' }); return true; }
+  try {
+    if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') {
+      const body = await readLimitedJson(request);
+      await ensureDatabase(body.bootstrapState);
+      const login = String(body.username || '').trim();
+      if (!login) { sendJson(response, 401, { error: 'Informe seu usuário ou e-mail.' }); return true; }
+      const result = await pool.query('SELECT id, name, username, email, password_hash, profile_id, active FROM app_users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1) ORDER BY (LOWER(username) = LOWER($1)) DESC, created_at ASC LIMIT 1', [login]);
+      const user = result.rows[0];
+      if (!user || !user.active || !verifyPassword(body.password || '', user.password_hash)) { sendJson(response, 401, { error: 'Usuário ou senha inválidos.' }); return true; }
+      const token = randomBytes(32).toString('hex');
+      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7;
+      await pool.query('INSERT INTO app_sessions (token, user_id, expires_at) VALUES ($1, $2, TO_TIMESTAMP($3 / 1000.0))', [token, user.id, expiresAt]);
+      sessions.set(token, { user, expiresAt });
+      const imported = await importLegacyBrowserState(body.legacyState, user);
+      setSessionCookie(response, request, token);
+      const data = await withCurrentUsers(visibleStateForUser(imported.state, user));
+      sendJson(response, 200, { user: publicUser(user), state: data, migration: imported.migration });
+      return true;
+    }
+    if (request.method === 'POST' && requestUrl.pathname === '/api/auth/logout') {
+      const token = tokenFrom(request);
+      if (token) { sessions.delete(token); await pool.query('DELETE FROM app_sessions WHERE token = $1', [token]); }
+      clearSessionCookie(response, request);
+      sendJson(response, 200, { ok: true });
+      return true;
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/auth/me') {
+      const user = await authenticatedUser(request);
+      if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; }
+      setSessionCookie(response, request, tokenFrom(request));
+      sendJson(response, 200, { user: publicUser(user), state: await withCurrentUsers(visibleStateForUser(await getState(), user)) });
+      return true;
+    }
+    if (request.method === 'POST' && requestUrl.pathname === '/api/state/migrate-local') {
+      const user = await authenticatedUser(request);
+      if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; }
+      const body = await readLimitedJson(request);
+      const imported = await importLegacyBrowserState(body.state, user);
+      sendJson(response, 200, { state: await withCurrentUsers(visibleStateForUser(imported.state, user)), migration: imported.migration });
+      return true;
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/state') {
+      const user = await authenticatedUser(request);
+      if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; }
+      sendJson(response, 200, { state: await withCurrentUsers(visibleStateForUser(await getState(), user)), user: publicUser(user) });
+      return true;
+    }
+    if (request.method === 'PUT' && requestUrl.pathname === '/api/state') {
+      const user = await authenticatedUser(request);
+      if (!user) { sendJson(response, 401, { error: 'Sessão expirada.' }); return true; }
+      const body = await readLimitedJson(request);
+      const state = await saveState(body.state, user);
+      sendJson(response, 200, { state: await withCurrentUsers(visibleStateForUser(state, user)), user: publicUser(user) });
+      return true;
+    }
+    sendJson(response, 404, { error: 'Endpoint não encontrado.' });
+    return true;
+  } catch (error) {
+    console.error('API error:', error);
+    sendJson(response, error.statusCode || 500, { error: error.message || 'Erro interno do servidor.' });
+    return true;
+  }
+}
 
 function formatDuration(seconds) {
   const minutes = Math.max(1, Math.round(Number(seconds || 0) / 60));

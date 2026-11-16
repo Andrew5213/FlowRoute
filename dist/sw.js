@@ -1,4 +1,4 @@
-const CACHE_NAME = 'flowroute-finance-v14';
+const CACHE_NAME = 'flowroute-finance-v15';
 const APP_SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/cashflow.js', '/dashboard.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', event => {
@@ -13,6 +13,7 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+  if (requestUrl.pathname.startsWith('/api/')) return;
   event.respondWith(fetch(event.request).then(response => {
     const copy = response.clone();
     caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
