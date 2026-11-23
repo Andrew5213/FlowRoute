@@ -9,7 +9,7 @@ Use o caminho novo `/opt/flowroute-finance` e confirme que ele ainda não existe
 Na raiz do pacote:
 
 ```sh
-docker compose -f deploy/vps/docker-compose.yml up -d --build flowroute-db flowroute-app
+docker compose -f deploy/vps/docker-compose.yml up -d flowroute-db
 ```
 
 ## Importação dos dados do Railway
@@ -18,6 +18,12 @@ Coloque o snapshot autorizado em `deploy/vps/migrate/flowroute.snapshot.json` e 
 
 ```sh
 docker compose -f deploy/vps/docker-compose.yml --profile migration run --rm flowroute-migrate
+```
+
+Depois que a importação terminar, inicie a aplicação:
+
+```sh
+docker compose -f deploy/vps/docker-compose.yml up -d --build flowroute-app
 ```
 
 O importador recusa gravar se o banco de destino já tiver dados. Ele transfere usuários com os hashes de senha atuais, estado da aplicação e documentos anexados; sessões ativas não são copiadas, então cada usuário fará login novamente.
