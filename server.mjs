@@ -9,7 +9,13 @@ const { Pool } = pg;
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), 'dist');
 const port = Number(process.env.PORT || 3000);
-const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined }) : null;
+const databaseSslSetting = process.env.DATABASE_SSL?.trim().toLowerCase();
+const databaseSsl = databaseSslSetting === 'false'
+  ? false
+  : databaseSslSetting === 'true' || process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: false }
+    : undefined;
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: databaseSsl }) : null;
 const sessions = new Map();
 const mime = {
   '.html': 'text/html; charset=utf-8',

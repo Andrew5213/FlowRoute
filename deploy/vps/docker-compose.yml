@@ -27,6 +27,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-flowroute}:${POSTGRES_PASSWORD}@flowroute-db:5432/${POSTGRES_DB:-flowroute}
+      DATABASE_SSL: "false"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
     depends_on:
