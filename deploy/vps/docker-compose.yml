@@ -44,6 +44,8 @@ services:
 
   flowroute-migrate:
     profiles: ["migration"]
+    # One-shot migration needs to read the host-protected, read-only snapshot.
+    user: "0:0"
     build:
       context: ../..
       dockerfile: deploy/vps/Dockerfile
