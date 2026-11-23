@@ -109,10 +109,10 @@ const renderGenericWithRouteMap = renderGeneric;
 renderGeneric = function(id) {
   renderGenericWithRouteMap(id);
   if (id !== 'routes') return;
-  const formPanel = byId('moduleFormPanel');
-  const panelHeading = formPanel?.querySelector('.panel-heading');
-  if (!formPanel || !panelHeading) return;
-  panelHeading.insertAdjacentHTML('afterend', `<div class="distance-map-shell route-map-shell">
+  const moduleHost = byId('moduleHost');
+  const pageHeading = moduleHost?.querySelector('.page-heading');
+  if (!moduleHost || !pageHeading) return;
+  pageHeading.insertAdjacentHTML('afterend', `<div class="distance-map-shell route-map-shell">
     <div class="map-panel-heading"><strong id="routeMapTitle">Rota selecionada</strong><span id="routeMapProvider">OpenStreetMap · OSRM</span></div>
     <div class="route-map-summary" id="routeMapSummary">Selecione uma etapa para ver o trajeto real.</div>
     <div class="distance-map route-map" id="routeMap" role="img" aria-label="Mapa do percurso real da etapa selecionada"></div>

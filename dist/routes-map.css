@@ -3,9 +3,9 @@
 .selected-route-row td { background:#edf5ff; }
 .selected-route-row td:first-child { box-shadow:inset 3px 0 0 #3976c9; }
 .route-select-row:focus-visible { outline:2px solid #3976c9; outline-offset:-2px; }
-.route-map-shell { margin-bottom:18px; }
+.route-map-shell { margin:0 0 18px; }
 .route-map-summary { padding:0 14px 12px; color:#62738a; font-size:10px; font-weight:600; line-height:1.5; }
-.route-map { height:340px; border-top:1px solid #e8edf3; }
+.route-map { height:380px; border-top:1px solid #e8edf3; }
 .route-map-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px 14px 8px; }
 .route-map-metrics > div { display:flex; flex-direction:column; gap:4px; padding:9px 11px; border:1px solid #e8edf3; border-radius:8px; background:#fff; }
 .route-map-metrics span { color:#8c99a9; font-size:9px; letter-spacing:.04em; text-transform:uppercase; }
