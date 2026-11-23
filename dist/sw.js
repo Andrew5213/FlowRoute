@@ -1,5 +1,5 @@
-const CACHE_NAME = 'flowroute-finance-v15';
-const APP_SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/cashflow.js', '/dashboard.js', '/manifest.webmanifest', '/icon.svg'];
+const CACHE_NAME = 'flowroute-finance-v16';
+const APP_SHELL = ['/', '/index.html', '/styles.css', '/routes-map.css', '/app.js', '/routes-map.js', '/cashflow.js', '/dashboard.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
