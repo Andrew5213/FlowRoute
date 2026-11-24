@@ -540,7 +540,7 @@ async function handleApi(request, response, requestUrl) {
       sendJson(response, 200, { documents: result.rows });
       return true;
     }
-    const integrationDocument = requestUrl.pathname.match(/^\\/api\\/integrations\\/erpnext\\/documents\\/(purchases|workExpenses)\\/([^/]+)$/);
+    const integrationDocument = requestUrl.pathname.match(/^\/api\/integrations\/erpnext\/documents\/(purchases|workExpenses)\/([^/]+)$/);
     if (request.method === 'GET' && integrationDocument) {
       const authorization = verifyErpIntegrationToken(request);
       if (!authorization.ok) { sendJson(response, authorization.status, { error: authorization.error }); return true; }
