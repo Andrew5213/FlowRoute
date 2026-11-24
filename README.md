@@ -29,6 +29,12 @@ O endereço publicado no Railway já funciona como Web App responsivo. Em navega
 
 Defina `OPENAI_API_KEY` como variável secreta no serviço do Railway ou no arquivo `.env` do Compose da VPS. Opcionalmente, use `OPENAI_MODEL` para escolher o modelo; o padrão é `gpt-4o-mini`. A chave fica somente no servidor. A leitura envia o documento selecionado à API da OpenAI e a pessoa deve conferir todos os campos antes de gravar. O uso da API pode gerar custos conforme a conta e o volume de documentos.
 
+## Integração somente leitura com ERPNext
+
+O ERPNext pode consultar `GET /api/integrations/erpnext/snapshot` usando o cabeçalho `X-FlowRoute-ERP-Token`. Configure `FLOWROUTE_ERP_INTEGRATION_SECRET` com um segredo aleatório de pelo menos 32 caracteres no serviço FlowRoute e use exatamente o mesmo valor como variável secreta no serviço ERPNext. A rota não usa contas de usuário e não aceita operações de escrita.
+
+O snapshot entrega uma lista permitida de campos do orçamento, equipes, composição, rotas, alterações, passagens, manutenção, quilometragem, frota, compras, gastos de obra, pagamentos e prestação de contas. A lista de campos também é filtrada no ERPNext. Usuários, perfis, dados bancários, contas, anexos e metadados de documentos não são enviados. A resposta não é persistida nem altera os registos do FlowRoute. Não reutilize senha de usuário como segredo de integração.
+
 ## Nota de avaliação
 
 O conteúdo dos documentos carregados é tratado como dado a extrair; instruções impressas dentro deles não são executadas pelo sistema.
