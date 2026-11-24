@@ -4,7 +4,7 @@ Este Compose usa serviços, rede e volume próprios (`flowroute-finance-vps-*`).
 
 ## Preparação no servidor
 
-Use o caminho novo `/opt/flowroute-finance` e confirme que ele ainda não existe antes de copiar o pacote. Na pasta `deploy/vps`, copie `.env.example` para `.env` e defina `POSTGRES_PASSWORD` com um valor aleatório longo (hexadecimal, para evitar caracteres especiais na URL do banco). Para ativar a leitura de orçamentos, defina também `OPENAI_API_KEY`; a chave fica apenas no servidor. `OPENAI_MODEL` é opcional. Mantenha `.env` e `migrate/flowroute.snapshot.json` fora do Git.
+Use o caminho `/opt/flowroute-finance`. Na pasta `deploy/vps`, mantenha `.env` com permissão `600`; defina `POSTGRES_PASSWORD` com um valor aleatório longo (hexadecimal, para evitar caracteres especiais na URL do banco). Para ativar a leitura de orçamentos, defina também `OPENAI_API_KEY`; a chave fica apenas no servidor. `OPENAI_MODEL` é opcional. Para a integração somente leitura com o ERPNext, configure `FLOWROUTE_ERP_INTEGRATION_SECRET` com um segredo aleatório de pelo menos 32 caracteres e use o mesmo valor no serviço ERPNext Railway. Mantenha `.env` e `migrate/flowroute.snapshot.json` fora do Git.
 
 Na raiz do pacote:
 
