@@ -455,6 +455,17 @@ function buildErpSnapshot(state) {
   return modules;
 }
 
+function verifyErpIntegrationToken(request) {
+  const integrationSecret = String(process.env.FLOWROUTE_ERP_INTEGRATION_SECRET || '').trim();
+  if (integrationSecret.length < 32) return { ok: false, status: 503, error: 'Integração ERPNext não configurada.' };
+  const suppliedSecret = String(request.headers['x-flowroute-erp-token'] || '');
+  const suppliedDigest = createHash('sha256').update(suppliedSecret).digest();
+  const expectedDigest = createHash('sha256').update(integrationSecret).digest();
+  return timingSafeEqual(suppliedDigest, expectedDigest)
+    ? { ok: true }
+    : { ok: false, status: 401, error: 'Acesso não autorizado.' };
+}
+
 async function handleApi(request, response, requestUrl) {
   setCors(request, response);
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return true; }
@@ -485,6 +496,72 @@ async function handleApi(request, response, requestUrl) {
         return true;
       }
       sendJson(response, 200, payload);
+      return true;
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/integrations/erpnext/export') {
+      const authorization = verifyErpIntegrationToken(request);
+      if (!authorization.ok) { sendJson(response, authorization.status, { error: authorization.error }); return true; }
+      const state = structuredClone(await getState());
+      if (Array.isArray(state.users)) {
+        state.users = state.users.map(user => {
+          const { password, passwordHash, password_hash, ...safeUser } = user || {};
+          return safeUser;
+        });
+      }
+      const saved = await pool.query('SELECT updated_at FROM app_state WHERE id = 1');
+      const payload = {
+        schemaVersion: 1,
+        source: 'FlowRoute Finance',
+        generatedAt: new Date().toISOString(),
+        sourceUpdatedAt: saved.rows[0]?.updated_at || null,
+        state
+      };
+      if (Buffer.byteLength(JSON.stringify(payload)) > 16 * 1024 * 1024) {
+        sendJson(response, 413, { error: 'A exportação ultrapassou o limite seguro de 16 MB.' });
+        return true;
+      }
+      sendJson(response, 200, payload);
+      return true;
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/integrations/erpnext/documents') {
+      const authorization = verifyErpIntegrationToken(request);
+      if (!authorization.ok) { sendJson(response, authorization.status, { error: authorization.error }); return true; }
+      await ensurePurchaseDocumentsTable();
+      await ensureWorkExpenseDocumentsTable();
+      const result = await pool.query(`
+        SELECT 'purchases' AS kind, purchase_id AS record_id, file_name, content_type, octet_length(data)::int AS size
+        FROM purchase_documents
+        UNION ALL
+        SELECT 'workExpenses' AS kind, expense_id AS record_id, file_name, content_type, octet_length(data)::int AS size
+        FROM work_expense_documents
+        ORDER BY kind, record_id
+        LIMIT 2000
+      `);
+      sendJson(response, 200, { documents: result.rows });
+      return true;
+    }
+    const integrationDocument = requestUrl.pathname.match(/^\\/api\\/integrations\\/erpnext\\/documents\\/(purchases|workExpenses)\\/([^/]+)$/);
+    if (request.method === 'GET' && integrationDocument) {
+      const authorization = verifyErpIntegrationToken(request);
+      if (!authorization.ok) { sendJson(response, authorization.status, { error: authorization.error }); return true; }
+      const kind = integrationDocument[1];
+      const recordId = decodeURIComponent(integrationDocument[2]);
+      const table = kind === 'purchases' ? 'purchase_documents' : 'work_expense_documents';
+      const key = kind === 'purchases' ? 'purchase_id' : 'expense_id';
+      if (kind === 'purchases') await ensurePurchaseDocumentsTable();
+      else await ensureWorkExpenseDocumentsTable();
+      const result = await pool.query('SELECT file_name, content_type, data FROM ' + table + ' WHERE ' + key + ' = $1', [recordId]);
+      if (!result.rowCount) { sendJson(response, 404, { error: 'Documento não encontrado.' }); return true; }
+      const document = result.rows[0];
+      const safeName = document.file_name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 150) || 'documento';
+      response.writeHead(200, {
+        'Content-Type': document.content_type,
+        'Content-Length': document.data.length,
+        'Content-Disposition': 'attachment; filename="' + safeName + '"',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff'
+      });
+      response.end(document.data);
       return true;
     }
     if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') {
