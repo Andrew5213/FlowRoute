@@ -411,6 +411,50 @@ async function handleWorkExpenseApi(request, response, requestUrl) {
     return true;
   }
 }
+const erpSnapshotFields = {
+  teams: ['id', 'mission', 'leader', 'vehicle', 'fuel', 'status', 'people', 'days', 'km', 'total'],
+  composition: ['team', 'employee', 'role', 'paper', 'days'],
+  routes: ['team', 'stage', 'origin', 'stop', 'destination', 'mode', 'departure', 'stay', 'status'],
+  changes: ['id', 'date', 'team', 'type', 'stage', 'days', 'newDestination', 'status', 'impact'],
+  flights: ['id', 'date', 'employee', 'team', 'type', 'origin', 'destination', 'valueUsd', 'status'],
+  maintenance: ['id', 'date', 'vehicle', 'team', 'type', 'description', 'odometer', 'provider', 'planned', 'status'],
+  mileage: ['date', 'vehicle', 'odometer', 'responsible', 'team', 'distance'],
+  fleet: ['vehicle', 'fuel', 'plate', 'lastReading', 'odometer', 'status', 'nextService'],
+  purchases: ['id', 'date', 'requester', 'team', 'item', 'justification', 'estimated', 'status'],
+  workExpenses: ['reference', 'documentType', 'date', 'supplier', 'project', 'scope', 'currency', 'subtotal', 'vat', 'total', 'validityDays', 'paymentTerms', 'status'],
+  paymentRegister: ['id', 'date', 'beneficiary', 'nature', 'reference', 'amount', 'method'],
+  payments: ['beneficiary', 'company', 'front', 'due', 'paid', 'balance'],
+  expenses: ['id', 'team', 'date', 'type', 'description', 'supplier', 'invoice', 'amount', 'attachment', 'status']
+};
+const erpSnapshotLimit = 2000;
+const erpSnapshotMaxBytes = 8 * 1024 * 1024;
+
+function sanitizeErpSnapshotRecord(record, allowedFields) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return {};
+  const safe = {};
+  for (const field of allowedFields) {
+    const value = record[field];
+    if (value === null || typeof value === 'number' || typeof value === 'boolean') safe[field] = value;
+    else if (typeof value === 'string') safe[field] = value.slice(0, 2000);
+  }
+  return safe;
+}
+
+function buildErpSnapshot(state) {
+  const budget = state.budget && typeof state.budget === 'object' ? state.budget : {};
+  const safeBudget = sanitizeErpSnapshotRecord(budget, ['total', 'subtotal', 'contingency', 'personnelReserve', 'savings']);
+  safeBudget.categories = Array.isArray(budget.categories)
+    ? budget.categories.slice(0, 100).map(row => sanitizeErpSnapshotRecord(row, ['label', 'expected']))
+    : [];
+  const modules = { budget: safeBudget };
+  for (const [key, fields] of Object.entries(erpSnapshotFields)) {
+    modules[key] = Array.isArray(state[key])
+      ? state[key].slice(0, erpSnapshotLimit).map(row => sanitizeErpSnapshotRecord(row, fields))
+      : [];
+  }
+  return modules;
+}
+
 async function handleApi(request, response, requestUrl) {
   setCors(request, response);
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return true; }
@@ -418,6 +462,31 @@ async function handleApi(request, response, requestUrl) {
   if (request.method === 'GET' && requestUrl.pathname === '/api/health') { sendJson(response, 200, { ok: true, database: Boolean(pool), service: 'flowroute-finance' }); return true; }
   if (!pool) { sendJson(response, 503, { error: 'Banco de dados não configurado neste ambiente.' }); return true; }
   try {
+    if (request.method === 'GET' && requestUrl.pathname === '/api/integrations/erpnext/snapshot') {
+      const integrationSecret = String(process.env.FLOWROUTE_ERP_INTEGRATION_SECRET || '').trim();
+      if (integrationSecret.length < 32) {
+        sendJson(response, 503, { error: 'Integração ERPNext não configurada.' });
+        return true;
+      }
+      const suppliedSecret = String(request.headers['x-flowroute-erp-token'] || '');
+      const suppliedDigest = createHash('sha256').update(suppliedSecret).digest();
+      const expectedDigest = createHash('sha256').update(integrationSecret).digest();
+      if (!timingSafeEqual(suppliedDigest, expectedDigest)) {
+        sendJson(response, 401, { error: 'Acesso não autorizado.' });
+        return true;
+      }
+
+      const state = await getState();
+      // Explicit field allowlists prevent user/profile, bank, attachment and
+      // future private fields from crossing this read-only integration.
+      const payload = { schemaVersion: 1, source: 'FlowRoute Finance', generatedAt: new Date().toISOString(), modules: buildErpSnapshot(state) };
+      if (Buffer.byteLength(JSON.stringify(payload)) > erpSnapshotMaxBytes) {
+        sendJson(response, 413, { error: 'O resumo ultrapassou o limite seguro de tamanho.' });
+        return true;
+      }
+      sendJson(response, 200, payload);
+      return true;
+    }
     if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') {
       const body = await readLimitedJson(request);
       await ensureDatabase(body.bootstrapState);
