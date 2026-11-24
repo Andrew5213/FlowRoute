@@ -455,6 +455,26 @@ function buildErpSnapshot(state) {
   return modules;
 }
 
+function verifyErpIntegrationToken(request) {
+  const integrationSecret = String(process.env.FLOWROUTE_ERP_INTEGRATION_SECRET || '').trim();
+  if (integrationSecret.length < 32) return { ok: false, status: 503, error: 'Integração ERPNext não configurada.' };
+  const suppliedSecret = String(request.headers['x-flowroute-erp-token'] || '');
+  const suppliedDigest = createHash('sha256').update(suppliedSecret).digest();
+  const expectedDigest = createHash('sha256').update(integrationSecret).digest();
+  return timingSafeEqual(suppliedDigest, expectedDigest)
+    ? { ok: true }
+    : { ok: false, status: 401, error: 'Acesso não autorizado.' };
+}
+
+function stripErpIntegrationSecrets(value) {
+  if (Array.isArray(value)) return value.map(stripErpIntegrationSecrets);
+  if (!value || typeof value !== 'object') return value;
+  const privateKeys = new Set(['password', 'passwordhash', 'token', 'secret', 'authorization', 'sessionid', 'cookie', 'apikey', 'accesstoken', 'refreshtoken']);
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !privateKeys.has(key.toLowerCase().replace(/[^a-z0-9]/g, '')))
+    .map(([key, nested]) => [key, stripErpIntegrationSecrets(nested)]));
+}
+
 async function handleApi(request, response, requestUrl) {
   setCors(request, response);
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return true; }
@@ -485,6 +505,67 @@ async function handleApi(request, response, requestUrl) {
         return true;
       }
       sendJson(response, 200, payload);
+      return true;
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/integrations/erpnext/export') {
+      const authorization = verifyErpIntegrationToken(request);
+      if (!authorization.ok) { sendJson(response, authorization.status, { error: authorization.error }); return true; }
+      const state = stripErpIntegrationSecrets(structuredClone(await getState()));
+      if (Array.isArray(state.users)) state.users = state.users.map(user => ({
+        id: user.id, name: user.name, username: user.username, email: user.email || '',
+        profileId: user.profileId || user.profile_id, active: user.active !== false
+      }));
+      const saved = await pool.query('SELECT updated_at FROM app_state WHERE id = 1');
+      const payload = {
+        schemaVersion: 1,
+        source: 'FlowRoute Finance',
+        generatedAt: new Date().toISOString(),
+        sourceUpdatedAt: saved.rows[0]?.updated_at || null,
+        state
+      };
+      if (Buffer.byteLength(JSON.stringify(payload)) > 16 * 1024 * 1024) {
+        sendJson(response, 413, { error: 'A exportação ultrapassou o limite seguro de 16 MB.' });
+        return true;
+      }
+      sendJson(response, 200, payload);
+      return true;
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/integrations/erpnext/documents') {
+      const authorization = verifyErpIntegrationToken(request);
+      if (!authorization.ok) { sendJson(response, authorization.status, { error: authorization.error }); return true; }
+      const tables = await pool.query("SELECT to_regclass('public.purchase_documents') IS NOT NULL AS purchases, to_regclass('public.work_expense_documents') IS NOT NULL AS work_expenses");
+      const queries = [];
+      if (tables.rows[0]?.purchases) queries.push("SELECT 'purchases' AS kind, purchase_id AS record_id, file_name, content_type, octet_length(data)::int AS size FROM purchase_documents");
+      if (tables.rows[0]?.work_expenses) queries.push("SELECT 'workExpenses' AS kind, expense_id AS record_id, file_name, content_type, octet_length(data)::int AS size FROM work_expense_documents");
+      const result = queries.length
+        ? await pool.query(queries.join(' UNION ALL ') + ' ORDER BY kind, record_id LIMIT 2001')
+        : { rows: [] };
+      if (result.rows.length > 2000) { sendJson(response, 413, { error: 'A cópia tem mais de 2000 anexos; divida a migração antes de continuar.' }); return true; }
+      sendJson(response, 200, { documents: result.rows });
+      return true;
+    }
+    const integrationDocument = requestUrl.pathname.match(/^\/api\/integrations\/erpnext\/documents\/(purchases|workExpenses)\/([^/]+)$/);
+    if (request.method === 'GET' && integrationDocument) {
+      const authorization = verifyErpIntegrationToken(request);
+      if (!authorization.ok) { sendJson(response, authorization.status, { error: authorization.error }); return true; }
+      const kind = integrationDocument[1];
+      const recordId = decodeURIComponent(integrationDocument[2]);
+      const table = kind === 'purchases' ? 'purchase_documents' : 'work_expense_documents';
+      const key = kind === 'purchases' ? 'purchase_id' : 'expense_id';
+      const tableStatus = await pool.query('SELECT to_regclass($1) AS table_name', ['public.' + table]);
+      if (!tableStatus.rows[0]?.table_name) { sendJson(response, 404, { error: 'Documento não encontrado.' }); return true; }
+      const result = await pool.query('SELECT file_name, content_type, data FROM ' + table + ' WHERE ' + key + ' = $1', [recordId]);
+      if (!result.rowCount) { sendJson(response, 404, { error: 'Documento não encontrado.' }); return true; }
+      const document = result.rows[0];
+      const safeName = document.file_name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 150) || 'documento';
+      response.writeHead(200, {
+        'Content-Type': document.content_type,
+        'Content-Length': document.data.length,
+        'Content-Disposition': 'attachment; filename="' + safeName + '"',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff'
+      });
+      response.end(document.data);
       return true;
     }
     if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') {
